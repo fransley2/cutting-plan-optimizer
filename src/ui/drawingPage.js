@@ -174,7 +174,7 @@ function appendActionsCell(row, drawing) {
   actions.className = 'row-actions';
   actions.append(
     iconButton('edit', 'Editar drawing', () => openDrawingEditor(drawing)),
-    iconButton('content_copy', 'Duplicar para outro equipamento', () => openDuplicateDrawing(drawing)),
+    iconButton('content_copy', 'Duplicar para outro equipamento', () => openDuplicateDrawing(drawing.id)),
   );
   cell.appendChild(actions);
   row.appendChild(cell);
@@ -252,6 +252,12 @@ function createField(label, name, value = '', inputType = 'text') {
   return wrapper;
 }
 
+function setFieldReadonly(field, readonly = false) {
+  const input = field.querySelector('input, textarea, select');
+  if (input) input.readOnly = Boolean(readonly);
+  return field;
+}
+
 function createSelectField(label, name, value, options) {
   const wrapper = document.createElement('label');
   wrapper.className = 'field';
@@ -289,8 +295,9 @@ function updateTemplateHint(input, hint, currentDrawingId = '') {
     : 'Nenhum outro desenho usa este template.';
 }
 
-function createTemplateField(drawing = {}) {
+function createTemplateField(drawing = {}, options = {}) {
   const wrapper = createField('Desenho Padrao / Template', 'templateDrawingNo', drawing.templateDrawingNo);
+  setFieldReadonly(wrapper, options.readonly);
   const input = wrapper.querySelector('[name="templateDrawingNo"]');
   const hint = document.createElement('small');
   hint.className = 'text-muted drawing-template-hint';
@@ -338,10 +345,17 @@ function bindModalCascade(form) {
   }, { once: true });
 }
 
-function buildDrawingForm(drawing = {}) {
+function buildDrawingForm(drawing = {}, options = {}) {
   const form = document.createElement('form');
   form.className = 'drawing-form-grid';
   const projectId = drawing.projectId || (!drawing.id ? getDefaultProjectId() : '');
+
+  if (options.originalDrawingNo) {
+    const subtitle = document.createElement('p');
+    subtitle.className = 'text-muted';
+    subtitle.textContent = `Original: ${options.originalDrawingNo}`;
+    form.appendChild(subtitle);
+  }
 
   const projectField = createSelectField('Projeto *', 'projectId', projectId, projectOptions());
   const equipmentField = createSelectField('Equipamento *', 'equipmentId', drawing.equipmentId, equipmentOptions(projectId));
@@ -351,7 +365,7 @@ function buildDrawingForm(drawing = {}) {
     projectField,
     equipmentField,
     createField('Drawing No *', 'drawingNo', drawing.drawingNo),
-    createTemplateField(drawing),
+    createTemplateField(drawing, { readonly: options.templateReadonly }),
     createField('Revision', 'revision', drawing.revision),
     createField('Title', 'title', drawing.title),
     createField('Discipline', 'discipline', drawing.discipline),
@@ -371,6 +385,16 @@ function validateFormPayload(payload) {
   if (!text(payload.projectId).trim()) return 'Projeto e obrigatorio.';
   if (!text(payload.equipmentId).trim()) return 'Equipamento e obrigatorio.';
   if (!text(payload.drawingNo).trim()) return 'Drawing No e obrigatorio.';
+  return '';
+}
+
+async function validateUniqueDrawingNo(payload, currentId = '') {
+  const getDrawingByDrawingNo = state.dependencies.getDrawingByDrawingNo;
+  if (!getDrawingByDrawingNo) return '';
+  const existing = await getDrawingByDrawingNo(payload.drawingNo);
+  if (existing && existing.id !== currentId) {
+    return 'Drawing number already exists. Please choose another.';
+  }
   return '';
 }
 
@@ -419,7 +443,10 @@ async function refreshDrawings() {
 function openDrawingEditor(drawing = null, options = {}) {
   const isDuplicate = Boolean(options.duplicate);
   const isEdit = Boolean(drawing?.id) && !isDuplicate;
-  const form = buildDrawingForm(drawing || {});
+  const form = buildDrawingForm(drawing || {}, {
+    originalDrawingNo: options.originalDrawingNo,
+    templateReadonly: isDuplicate,
+  });
   openModal({
     title: isEdit ? 'Editar drawing' : (isDuplicate ? 'Duplicar drawing' : 'Novo drawing'),
     body: form,
@@ -427,7 +454,7 @@ function openDrawingEditor(drawing = null, options = {}) {
     buttons: [
       { label: 'Cancelar' },
       {
-        label: isEdit ? 'Salvar' : 'Criar',
+        label: isEdit ? 'Salvar' : (isDuplicate ? 'Salvar como novo drawing' : 'Criar'),
         variant: 'btn-primary',
         closeOnClick: false,
         onClick: async () => {
@@ -437,6 +464,13 @@ function openDrawingEditor(drawing = null, options = {}) {
             if (message) {
               showToast(message, 'error');
               return;
+            }
+            if (isDuplicate) {
+              const duplicateMessage = await validateUniqueDrawingNo(payload);
+              if (duplicateMessage) {
+                showToast(duplicateMessage, 'error');
+                return;
+              }
             }
             if (isEdit) {
               await state.dependencies.updateDrawing?.(drawing.id, payload);
@@ -458,19 +492,32 @@ function openDrawingEditor(drawing = null, options = {}) {
   });
 }
 
-function openDuplicateDrawing(source = {}) {
-  const draft = {
-    projectId: source.projectId,
-    equipmentId: '',
-    drawingNo: source.drawingNo,
-    templateDrawingNo: source.templateDrawingNo || source.drawingNo,
-    revision: source.revision,
-    title: source.title,
-    discipline: source.discipline,
-    clientReference: source.clientReference,
-    status: source.status || 'DRAFT',
-  };
-  openDrawingEditor(draft, { duplicate: true });
+async function openDuplicateDrawing(sourceOrId = {}) {
+  try {
+    const source = typeof sourceOrId === 'string'
+      ? await state.dependencies.getDrawing?.(sourceOrId)
+      : sourceOrId;
+    if (!source) {
+      showToast('Drawing not found', 'error');
+      await refreshDrawings();
+      return;
+    }
+    const draft = {
+      projectId: source.projectId,
+      equipmentId: '',
+      drawingNo: source.drawingNo ? `${source.drawingNo}-COPY` : '',
+      templateDrawingNo: source.drawingNo,
+      revision: source.revision,
+      title: source.title,
+      discipline: source.discipline,
+      clientReference: source.clientReference,
+      status: source.status || 'DRAFT',
+    };
+    openDrawingEditor(draft, { duplicate: true, originalDrawingNo: source.drawingNo });
+  } catch (error) {
+    console.error(error);
+    showToast('Nao foi possivel duplicar o drawing.', 'error');
+  }
 }
 
 async function handleEdit() {

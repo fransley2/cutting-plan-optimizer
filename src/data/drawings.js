@@ -104,6 +104,14 @@ export async function getDrawing(id) {
   return idbGet(db, STORE_NAME, id);
 }
 
+export async function getDrawingByDrawingNo(drawingNo) {
+  const value = requiredText(drawingNo).toUpperCase();
+  if (!value) return null;
+  const db = await getDB();
+  const records = await idbGetAll(db, STORE_NAME);
+  return records.find((record) => requiredText(record.drawingNo).toUpperCase() === value) || null;
+}
+
 export async function listDrawings(filters = {}) {
   const db = await getDB();
   const records = await idbGetAll(db, STORE_NAME);

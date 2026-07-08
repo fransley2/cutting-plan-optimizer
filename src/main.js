@@ -87,6 +87,7 @@ import {
   updateDrawing,
   deleteDrawing,
   getDrawing,
+  getDrawingByDrawingNo,
   listDrawings,
 } from './data/drawings.js';
 import {
@@ -1079,6 +1080,7 @@ async function renderOrRefreshDrawingPage() {
       updateDrawing,
       deleteDrawing,
       getDrawing,
+      getDrawingByDrawingNo,
       listProjects: getAllProjects,
       listEquipments,
       defaultProjectId,
