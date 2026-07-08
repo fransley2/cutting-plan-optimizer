@@ -1,0 +1,63 @@
+/*
+  Design tokens: fonte unica de verdade para o visual do app.
+  Mantem os nomes existentes para preservar os consumidores atuais.
+*/
+:root {
+  /* Brand */
+  --color-primary: #244C5A;        /* Primary Deep Petrol */
+  --color-primary-light: #3D6472;
+  --color-primary-dark: #073543;
+  --color-primary-container: #073543;
+  --color-secondary: #ED8B00;      /* Secondary Industrial Orange */
+  --color-secondary-light: #FFB873;
+  --color-secondary-container: #8C5000;
+  --color-tertiary: #8E2C48;       /* Burgundy */
+
+  /* Semantic */
+  --color-critical: #8B2C2C;
+  --color-critical-bg: #FFDAD6;
+  --color-success: #244C5A;
+  --color-success-bg: #C0E9FA;
+  --color-warning: #ED8B00;
+  --color-warning-bg: #FFDCBF;
+  --color-input-editable: #FFF2CC;
+
+  /* Neutrals */
+  --color-bg: #FFFFFF;
+  --color-bg-subtle: #F4F4F0;
+  --color-bg-canvas: #D9D9D6;
+  --color-border: #C4C7C8;
+  --color-border-strong: #71787B;
+  --color-text: #1A1C1A;
+  --color-text-muted: #41484B;
+  --color-text-inverse: #FFFFFF;
+
+  /* Typography */
+  --font-family: 'Arimo', 'Segoe UI', system-ui, sans-serif;
+  --font-family-data: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-family-mono: 'Cascadia Code', 'Consolas', monospace;
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-base: 0.875rem;
+  --fs-md: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 2rem;
+
+  /* Spacing scale (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Outlines first; shadows remain for modal/toast overlays only */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.16);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}

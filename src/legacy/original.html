@@ -1,0 +1,2981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="We are a world leader in engineering and drilling activities and in the development of major projects, in the energy and infrastructures sectors.">
+<link rel="icon" href="https://www.saipem.com/themes/custom/saipem_theme/favicon.ico" type="image/vnd.microsoft.icon">
+<title>Cutting Plan Optimizer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+/* Estilos Customizados */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;700&display=swap');
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f8fafc;
+  color: #334155;
+}
+
+.saipem-deep-teal { color: #0f172a; }
+.saipem-orange { color: #f97316; }
+
+.stock-bar {
+  background-color: #e2e8f0;
+  border: 1px solid #cbd5e0;
+  height: 50px;
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+  width: 100%;
+  transition: background-color 0.3s, border 0.3s;
+}
+
+.piece {
+  position: absolute;
+  height: 100%;
+  display: flex;
+  flex-direction: column;  
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: var(--label-font-size, 9pt);
+  border-right: 1px solid rgba(255,255,255,0.3);
+  text-align: center;  
+  line-height: 1.2;
+}
+
+.piece-caption {
+  font-weight: 700;
+}
+
+.piece-length {
+  font-size: 0.8em;
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+.piece > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.stacked-labels .piece {
+    flex-direction: column;
+    justify-content: center;
+    font-size: 0.7rem;
+    line-height: 1.1;
+    text-align: center;
+}
+
+body.stacked-labels .piece .piece-caption,
+body.stacked-labels .piece .piece-length {
+    display: block;
+}
+
+
+.piece-offcut {
+  background: repeating-linear-gradient(45deg, #d1d5db, #d1d5db 10px, #e5e7eb 10px, #e5e7eb 20px);
+  color: #374151;
+  font-weight: 600;
+  cursor: default;
+}
+
+.piece-trim {
+  background: repeating-linear-gradient(45deg, #fecaca, #fecaca 10px, #fee2e2 10px, #fee2e2 20px);
+  color: #991b1b;
+  font-weight: 600;
+  cursor: default;
+}
+
+.piece-kerf { background-color: #94a3b8; cursor: default; }
+
+.monochrome .piece {
+    background: #ffffff !important;
+    color: #1d1d1f !important;
+    border: 1px solid #1d1d1f !important;
+    box-sizing: border-box;
+}
+ .monochrome .piece-offcut {
+    background: repeating-linear-gradient(135deg, #ffffff 0px, #ffffff 5px, #e0e0e0 5px, #e0e0e0 6px) !important;
+    color: #1d1d1f !important;
+    border: 1px solid #1d1d1f !important;
+    box-sizing: border-box;
+}
+
+.monochrome .piece-trim { 
+    background: repeating-linear-gradient(135deg, #ffffff 0px, #ffffff 5px, #e0e0e0 5px, #e0e0e0 6px) !important; 
+    color: #1d1d1f !important; 
+    border: 1px solid #1d1d1f !important; 
+    box-sizing: border-box; 
+}
+
+
+.tooltip {
+  visibility: hidden;
+  position: absolute;
+  background-color: #1e293b;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  z-index: 10;
+  white-space: nowrap;
+  bottom: 110%;
+  left: 50%;
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.piece:hover .tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cut-sheet {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 1.5rem;
+  background-color: white;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+}
+
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
+}
+.modal-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+.modal-content {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    transform: scale(0.95);
+    transition: transform 0.3s;
+}
+.modal-overlay.visible .modal-content {
+    transform: scale(1);
+}
+
+/* Validation Style */
+.input-error {
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.toast {
+    padding: 1rem;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+.toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+.toast.success { background-color: #22c55e; }
+.toast.error { background-color: #ef4444; }
+
+/* Dropdown Menu */
+.dropdown { position: relative; display: inline-block; }
+.dropdown-content {
+    display: none;
+    position: absolute;
+    right: 0;
+    background-color: white;
+    min-width: 200px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    z-index: 1;
+    border-radius: 8px;
+    padding: 0.5rem 0;
+    border: 1px solid #e5e7eb;
+}
+.dropdown-content button {
+    color: #374151;
+    padding: 0.75rem 1rem;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+.dropdown-content button:hover { background-color: #f3f4f6; }
+.dropdown:hover .dropdown-content { display: block; }
+
+.label-toggle-group button {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-weight: 600;
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    background-color: white;
+    transition: all 0.2s;
+}
+.label-toggle-group button:hover {
+    background-color: #f1f5f9;
+    border-color: #94a3b8;
+}
+.label-toggle-group button.active {
+    background-color: #4f46e5;
+    color: white;
+    border-color: #4f46e5;
+}
+
+#toggle-colors-btn.active {
+    background-color: #1e293b;
+    border-color: #1e293b;
+    color: white;
+}
+
+
+@media print {
+  .no-print { display: none !important; }
+  .cut-sheet { box-shadow: none; border: 1px solid #cbd5e0; page-break-inside: avoid; }
+  body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
+</style>
+</head>
+<body class="bg-gray-100 font-sans">
+<div id="toast-container"></div>
+
+<div class="max-w-7xl mx-auto p-6 space-y-6">
+
+    <header class="backdrop-blur-md bg-white/80 border border-white/20 shadow-lg rounded-3xl p-4 px-6 flex justify-between items-center no-print">
+      <div class="flex items-center gap-4">
+        <img src="https://i.ibb.co/YFQ19ktr/saipem-logo-S.png" alt="Saipem Logo" class="w-12 h-12 rounded-xl shadow-sm" />
+        <div>
+          <h1 class="text-2xl font-semibold text-gray-800 tracking-tight" data-translate="title">
+            Cutting Plan Optimizer
+          </h1>
+          <p class="text-gray-500 text-sm" data-translate="subtitle">
+            Powered by Saipem - Fabrication CTCO (PPC) Team · V1
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <div class="dropdown">
+          <button class="bg-white/60 border border-gray-300 rounded-xl px-3 py-2 text-sm shadow-sm hover:bg-white/80 hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-blue-400 flex items-center gap-2">
+            <i class="fas fa-database text-gray-600"></i>
+            <span data-translate="manageData">Manage Data</span>
+            <i class="fas fa-chevron-down text-xs"></i>
+          </button>
+          <div class="dropdown-content">
+            <button id="import-plans-btn"><i class="fas fa-upload fa-fw"></i><span data-translate="importPlans">Import Saved Plans</span></button>
+            <button id="export-plans-btn"><i class="fas fa-download fa-fw"></i><span data-translate="exportPlans">Export Saved Plans</span></button>
+          </div>
+        </div>
+        <input type="file" id="import-plans-input" class="hidden" accept=".json">
+
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-gray-600">🌐</span>
+          <select id="language-selector" 
+            class="bg-white/60 border border-gray-300 rounded-xl px-3 py-2 text-sm shadow-sm 
+                   hover:bg-white/80 hover:shadow-md transition focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="en">English</option>
+            <option value="pt-br">Português (BR)</option>
+            <option value="it">Italiano</option>
+            <option value="fr">Français</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <section class="bg-white p-6 rounded-lg shadow-md space-y-6 no-print">
+        <div class="flex flex-col md:flex-row gap-8">
+            <!-- Project Data Block -->
+            <div class="flex-1 space-y-4">
+                <h3 class="text-lg font-semibold text-gray-700 border-b pb-2" data-translate="projectDataTitle">Dados do Projeto</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="project-name" class="block text-sm font-medium text-gray-600 mb-1" data-translate="projectLabel">Projeto</label>
+                        <input id="project-name" data-translate-placeholder="projectLabel" placeholder="Projeto" class="w-full border p-2 rounded-md">
+                    </div>
+                    <div>
+                        <label for="client-name" class="block text-sm font-medium text-gray-600 mb-1" data-translate="clientLabel">Cliente</label>
+                        <input id="client-name" data-translate-placeholder="clientLabel" placeholder="Cliente" class="w-full border p-2 rounded-md">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label for="equipment-name" class="block text-sm font-medium text-gray-600 mb-1" data-translate="equipmentLabel">Equipamento</label>
+                        <input id="equipment-name" data-translate-placeholder="equipmentLabel" placeholder="Equipamento" class="w-full border p-2 rounded-md">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Work Data Block -->
+			
+			<div class="flex-1 space-y-4 md:border-l md:pl-8">
+                <h3 class="text-lg font-semibold text-gray-700 border-b pb-2" data-translate="reportDataTitle">Report Data</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div class="md:col-span-2">
+                        <label for="activity-name" class="block text-sm font-medium text-gray-600 mb-1" data-translate="workpackLabel">Workpack</label>
+                        <input id="activity-name" data-translate-placeholder="workpackLabel" placeholder="Workpack" class="w-full border p-2 rounded-md">
+                    </div><div>
+                        <label for="nesting-sheet-number" class="block text-sm font-medium text-gray-600 mb-1" data-translate="nestingSheetNumberLabel">Cutting Sheet No.</label>
+                        <input id="nesting-sheet-number" data-translate-placeholder="nestingSheetNumberLabel" placeholder="Cutting Sheet No." class="w-full border p-2 rounded-md">
+                    </div>
+                     <div>
+                        <label for="nesting-sheet-destination" class="block text-sm font-medium text-gray-600 mb-1" data-translate="destinationLabel">Destination</label>
+                        <input id="nesting-sheet-destination" data-translate-placeholder="destinationLabel" placeholder="Destination" class="w-full border p-2 rounded-md">
+                    </div><div>
+                        <label for="coupon-material" class="block text-sm font-medium text-gray-600 mb-1" data-translate="couponLabel">Material Coupon</label>
+                        <input id="coupon-material" data-translate-placeholder="couponLabel" placeholder="Material Coupon" class="w-full border p-2 rounded-md">
+                    </div><div>
+                        <label for="report-date" class="block text-sm font-medium text-gray-600 mb-1" data-translate="dateLabel">Date</label>
+                        <input id="report-date" type="date" class="w-full border p-2 rounded-md">
+                    </div>
+                    <div>
+                        <label for="prepared-by-name" class="block text-sm font-medium text-gray-600 mb-1" data-translate="preparedByLabel">Prepared By</label>
+                        <input id="prepared-by-name" data-translate-placeholder="preparedByLabel" placeholder="Prepared By" class="w-full border p-2 rounded-md">
+                    </div>
+                     <div>
+                        <label for="prepared-by-date" class="block text-sm font-medium text-gray-600 mb-1" data-translate="dateLabel">Date</label>
+                        <input id="prepared-by-date" type="date" class="w-full border p-2 rounded-md">
+                    </div>
+                    <div>
+                        <label for="received-by-name" class="block text-sm font-medium text-gray-600 mb-1" data-translate="receivedByLabel">Received By</label>
+                        <input id="received-by-name" data-translate-placeholder="receivedByLabel" placeholder="Received By" class="w-full border p-2 rounded-md">
+                    </div>
+                     <div>
+                        <label for="received-by-date" class="block text-sm font-medium text-gray-600 mb-1" data-translate="dateLabel">Date</label>
+                        <input id="received-by-date" type="date" class="w-full border p-2 rounded-md">
+                    </div>                   
+                </div>
+            </div>
+        </div>
+        <div class="flex flex-wrap gap-2 pt-4 border-t">
+            <button id="save-plan-btn" class="bg-purple-600 text-white px-4 py-2 rounded-md text-sm hover:bg-purple-700 transition"><i class="fas fa-save mr-2"></i><span data-translate="saveButton">Save Plan</span></button>
+            <button id="load-plan-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700 transition"><i class="fas fa-folder-open mr-2"></i><span data-translate="loadButton">Load Plan</span></button>
+            <button id="import-coupon-btn" class="bg-teal-600 text-white px-4 py-2 rounded-md text-sm hover:bg-teal-700 transition"><i class="fas fa-file-import mr-2"></i><span data-translate="importCouponButton">Import Material Coupon</span></button>
+            <input type="file" id="coupon-file-input" class="hidden" accept=".xlsx, .csv, .xls">
+            <button id="clear-all-btn" class="bg-red-600 text-white px-4 py-2 rounded-md text-sm hover:bg-red-700 transition ml-auto"><i class="fas fa-trash-alt mr-2"></i><span data-translate="clearAll">Clear All</span></button>
+        </div>
+    </section>
+
+    <section class="bg-white p-6 rounded-lg shadow-md no-print">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4" data-translate="settingsTitle">Settings</h2>
+      <div class="flex flex-wrap gap-6 items-center">
+        <div>
+          <label class="block text-sm font-medium text-gray-600" data-translate="kerfLabel">Kerf (mm)</label>
+          <input type="number" id="kerf" value="5" min="0" class="border p-2 rounded-md w-28 mt-1">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-600" data-translate="minOffcutLabel">Min. Offcut (mm)</label>
+          <input type="number" id="min-offcut" value="500" min="0" class="border p-2 rounded-md w-28 mt-1">
+        </div>
+        <div>
+          <label for="stock-strategy" class="block text-sm font-medium text-gray-600" data-translate="stockStrategyLabel">Stock Usage Strategy</label>
+          <select id="stock-strategy" class="border p-2 rounded-md w-48 mt-1">
+            <option value="best-fit" data-translate="strategyBestFit">Best Fit (Default)</option>
+            <option value="prioritize-offcuts" data-translate="strategyPrioritizeOffcuts">Prioritize Offcuts First</option>
+            <option value="smallest-bars" data-translate="strategySmallestBars">Use Smallest Bars First</option>
+          </select>
+        </div>
+        
+        <div class="pl-4 border-l border-gray-300 space-y-2">
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="enable-trim" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                <label for="enable-trim" class="block text-sm font-medium text-gray-600" data-translate="enableTrimLabel">Habilitar Aparo?</label>
+            </div>
+            <div id="trim-inputs-container" class="hidden flex gap-4">
+                <div>
+                    <label for="left-trim" class="block text-sm font-medium text-gray-600" data-translate="leftTrimLabel">Aparo Esquerdo (mm)</label>
+                    <input type="number" id="left-trim" value="0" min="0" class="border p-2 rounded-md w-28 mt-1">
+                </div>
+                <div>
+                    <label for="right-trim" class="block text-sm font-medium text-gray-600" data-translate="rightTrimLabel">Aparo Direito (mm)</label>
+                    <input type="number" id="right-trim" value="0" min="0" class="border p-2 rounded-md w-28 mt-1">
+                </div>
+            </div>
+        </div>
+        
+      </div>
+    </section>
+
+    <section class="bg-white p-6 rounded-lg shadow-md no-print">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold text-gray-700" data-translate="stockTitle">Available Stock</h2>
+        <div class="flex gap-2">
+            <button id="upload-stock-btn" class="text-sm bg-gray-600 text-white py-1 px-3 rounded-md hover:bg-gray-700 transition flex items-center" data-translate-title="uploadStockTitle" title="Upload via .xlsx"><i class="fas fa-upload mr-2"></i><span data-translate="uploadButton">Upload</span></button>
+            <button id="add-stock" class="text-sm bg-gray-800 text-white w-8 h-8 rounded-md hover:bg-black transition text-lg font-bold">+</button>
+            <input type="file" id="stock-file-input" class="hidden" accept=".xlsx, .csv">
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thPO">PO</th>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thItem">Item</th>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thQty">Qty</th>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thStockLength">Length (mm)</th>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thMaterialGrade">Material</th>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thHeatNumber">Heat Number</th>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thDescription">Description</th>
+                    <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thTraceability">Traceability</th>
+                    <th class="w-24 text-center text-xs font-medium text-gray-500 uppercase" data-translate="thActions">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="stock-list" class="bg-white divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="bg-white p-6 rounded-lg shadow-md no-print">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-lg font-semibold text-gray-700" data-translate="partsTitle">Required Parts</h2>
+        <div class="flex gap-2">
+            <button id="upload-parts-btn" class="text-sm bg-gray-600 text-white py-1 px-3 rounded-md hover:bg-gray-700 transition flex items-center" data-translate-title="uploadPartsTitle" title="Upload via .xlsx"><i class="fas fa-upload mr-2"></i><span data-translate="uploadButton">Upload</span></button>
+            <button id="add-part" class="text-sm bg-gray-800 text-white w-8 h-8 rounded-md hover:bg-black transition text-lg font-bold">+</button>
+            <input type="file" id="parts-file-input" class="hidden" accept=".xlsx, .csv">
+        </div>
+      </div>
+       <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thDwgNumber">DWG Number</th>
+                        <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thMark">Mark</th>
+                        <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thPOS">POS</th>
+                        <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thQty">Qty</th>
+                        <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thCutLength">Cut L. (mm)</th>
+                        <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thMaterial">Material</th>
+                        <th class="px-2 py-2 text-left text-xs font-medium text-gray-500 uppercase" data-translate="thPriority">Priority</th>
+                        <th class="w-24 text-center text-xs font-medium text-gray-500 uppercase" data-translate="thActions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="parts-list" class="bg-white divide-y divide-gray-200"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="text-center no-print">
+      <button id="calculate" class="bg-orange-500 text-white font-bold px-8 py-4 rounded-lg shadow-lg hover:bg-orange-600 text-xl transition transform hover:scale-105 w-80 h-16 flex items-center justify-center">
+        <span id="calculate-text"><i class="fas fa-cogs mr-2"></i><span data-translate="calculateButton">Optimize Cutting Plan</span></span>
+        <span id="calculate-spinner" class="hidden"><i class="fas fa-spinner fa-spin text-2xl"></i><span class="ml-3" data-translate="processing">Processing...</span></span>
+      </button>
+    </div>
+
+    <section id="results-container" class="space-y-6 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-md">
+            <div class="flex justify-between items-center flex-wrap gap-4">
+                <h2 class="text-2xl font-bold text-gray-700" data-translate="resultsTitle">Results</h2>
+                <div class="flex gap-4 flex-wrap no-print items-center">
+                    
+                    <div class="flex items-center gap-2 pl-4 border-l border-gray-300">
+                        <span class="text-sm font-medium text-gray-600" data-translate="toggleLabelsButton">Labels:</span>
+                        <div class="label-toggle-group flex rounded-md shadow-sm">
+                            <button id="toggle-label-seq" title="Toggle Sequential Number" class="rounded-l-md">#</button>
+                            <button id="toggle-label-mark" title="Toggle Mark" class="active">M</button>
+                            <button id="toggle-label-pos" title="Toggle POS" class="active">P</button>
+                            <button id="toggle-label-length" title="Toggle Length Layout" class="rounded-r-md active">L</button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-2 pl-4 border-l border-gray-300">
+                         <label for="label-font-size-slider" class="text-sm font-medium text-gray-600" data-translate="fontSizeLabel">Font Size:</label>
+                         <input id="label-font-size-slider" type="range" min="6" max="16" value="9" class="w-24 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                         <span id="label-font-size-value" class="text-sm text-gray-700 w-6 text-right">9pt</span>
+                    </div>
+
+                    <div class="flex gap-2 pl-4 border-l border-gray-300">
+                        <button id="toggle-colors-btn" class="text-sm bg-gray-500 text-white py-2 px-3 rounded-md hover:bg-gray-600 transition disabled:opacity-50" disabled><i class="fas fa-palette mr-2"></i><span data-translate="toggleColorButton">Colors</span></button>
+                        <button id="export-excel-btn" class="text-sm bg-green-600 text-white py-2 px-3 rounded-md hover:bg-green-700 transition disabled:opacity-50" disabled><i class="fas fa-file-excel mr-2"></i><span data-translate="exportButton">Export</span></button>
+                        
+                        <div class="dropdown">
+                          <button class="text-sm bg-blue-600 text-white py-2 px-3 rounded-md hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50" id="print-dropdown-btn" disabled>
+                            <i class="fas fa-print mr-1"></i>
+                            <span data-translate="printOptions">Print Options</span>
+                            <i class="fas fa-chevron-down text-xs"></i>
+                          </button>
+                          <div class="dropdown-content">
+                            <button id="print-btn"><i class="fas fa-image fa-fw"></i><span data-translate="printButton">Print Visual</span></button>
+                            <button id="print-classic-btn"><i class="fas fa-table fa-fw"></i><span data-translate="printButtonTabular">Print Tabular</span></button>
+                            <button id="print-simple-btn"><i class="fas fa-file-alt fa-fw"></i><span data-translate="printButtonSimple">Cutting Sheet</span></button>
+                            <button id="print-pro-btn" class="text-purple-600 hover:bg-purple-50"><i class="fas fa-star fa-fw"></i><span data-translate="printButtonPro">Print Pro-Style</span></button>
+                          </div>
+                        </div>
+                    </div>
+
+                    <div id="signature-toggle-container" class="flex items-center gap-2 pl-4 border-l border-gray-300 hidden">
+                        <input type="checkbox" id="include-signatures" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <label for="include-signatures" class="text-sm text-gray-700" data-translate="includeSignaturesLabel">Signatures</label>
+                    </div>
+                </div>
+            </div>
+            <div id="results-summary" class="mt-4 text-sm text-gray-700 bg-gray-50 p-4 rounded-lg border border-gray-200"></div>
+            <div id="results-visual" class="space-y-8 pt-4"></div>
+        </div>
+        <div id="offcuts-container" class="bg-white p-6 rounded-lg shadow-md"></div>
+    </section>
+</div>
+
+<!-- Original modal for simple dialogs (Save, Clear) -->
+<div id="modal" class="modal-overlay no-print">
+    <div class="modal-content">
+        <h3 id="modal-title" class="text-xl font-bold mb-4"></h3>
+        <div id="modal-body"></div>
+        <div id="modal-footer" class="mt-6 flex justify-end gap-3"></div>
+    </div>
+</div>
+
+<!-- New HIG Modal for Loading Saved Plans -->
+<div id="load-plan-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 hidden no-print">
+  <div class="bg-gradient-to-b from-white to-gray-50 border border-gray-200 rounded-3xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+    
+    <header class="border-b border-gray-200 px-6 py-4 space-y-3">
+      <div class="flex justify-between items-center">
+        <h2 class="text-[20px] font-semibold text-gray-900 tracking-tight" data-translate="loadPlanTitle">Saved Plans</h2>
+        <button id="closeModal" class="text-gray-400 hover:text-gray-600 transition text-2xl leading-none">&times;</button>
+      </div>
+      <input type="search" id="plan-search-input" data-translate-placeholder="searchPlansPlaceholder" placeholder="Search by name, project, or equipment..." class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </header>
+
+    <main id="modal-body" class="overflow-y-auto px-6 py-4 space-y-3">
+    </main>
+
+    <footer class="border-t border-gray-200 px-6 py-4 flex justify-end">
+      <button id="footerCloseModal" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-lg transition" data-translate="cancel">Close</button>
+    </footer>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+// --- UTILITIES ---
+const safeParseFloat = (val, defaultVal = 0) => { const n = parseFloat(val); return isNaN(n) || !isFinite(n) ? defaultVal : n; };
+const safeParseInt = (val, defaultVal = 0) => { const n = parseInt(val, 10); return isNaN(n) ? defaultVal : n; };
+const safeToFixed = (num, digits = 0) => { const n = parseFloat(num); return isNaN(n) ? 'N/A' : n.toFixed(digits); };
+const generateUUID = () => ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+const getProjectData = () => ({
+    project: document.getElementById('project-name').value,
+    client: document.getElementById('client-name').value,
+    equipment: document.getElementById('equipment-name').value,
+    preparedBy: document.getElementById('prepared-by-name').value,
+    preparedByDate: document.getElementById('prepared-by-date').value,
+    receivedBy: document.getElementById('received-by-name').value,
+    receivedByDate: document.getElementById('received-by-date').value,
+    workpack: document.getElementById('activity-name').value,
+    coupon: document.getElementById('coupon-material').value,
+    nestingSheet: document.getElementById('nesting-sheet-number').value,
+    destination: document.getElementById('nesting-sheet-destination').value,
+    date: document.getElementById('report-date').value
+});
+
+// --- I18N DICTIONARY ---
+const translations = {
+    "en": {
+        title: "Cutting Plan Optimizer",
+        subtitle: "Powered by Saipem - Fabrication CTCO (PPC) Team · V1",
+        projectDataTitle: "Project Data",
+        reportDataTitle: "Report Data",
+        settingsTitle: "Settings",
+        kerfLabel: "Kerf (mm)",
+        minOffcutLabel: "Min. Offcut (mm)",
+        enableTrimLabel: "Enable Trim?",
+        leftTrimLabel: "Left Trim (mm)",
+        rightTrimLabel: "Right Trim (mm)",
+        stockTitle: "Available Stock",
+        partsTitle: "Required Parts",
+        calculateButton: "Optimize Cutting Plan",
+        resultsTitle: "Results",
+        toggleLabelsButton: "Labels",
+        toggleColorButton: "Colors",
+        exportButton: "Export",
+        printButton: "Print Visual",
+        printButtonTabular: "Print Tabular",
+        printButtonSimple: "Cutting Sheet",
+        saveButton: "Save Plan",
+        loadButton: "Load Plan",
+        loadPlanTitle: "Saved Plans",
+        searchPlansPlaceholder: "Search by name, project, or equipment...",
+        noPlansFound: "No plans found matching your search.",
+        noPlansSaved: "No saved plans found.",
+        importCouponButton: "Import Material Coupon",
+        projectLabel: "Project", clientLabel: "Client", equipmentLabel: "Equipment", preparedByLabel: "Prepared By", receivedByLabel: "Received By", workpackLabel: "Workpack", couponLabel: "Material Coupon", dateLabel: "Date",
+        nestingSheetNumberLabel: "Cutting Sheet No.", destinationLabel: "Destination",
+        thPO: "PO", thItem: "Item", thQty: "Qty", thTraceability: "Traceability", thDescription: "Description", thMaterialGrade: "Material", thHeatNumber: "Heat Number", thStockLength: "Length (mm)",
+        thDwgNumber: "DWG Number", thMark: "Mark", thPOS: "POS", thCutLength: "Cut L. (mm)", thMaterial: "Material", thPriority: "Priority",
+        thActions: "Actions",
+        uploadButton: "Upload",
+        cutSheetTitle: "Cut Sheet",
+        barLabel: "Bar",
+        diagramTitle: "Cutting Diagram",
+        cutListTitle: "Cut List",
+        utilizationLabel: "Utilization",
+        offcutLabel: "Offcut",
+        summaryTitle: "General Summary",
+        bestAlgorithm: "Best Algorithm",
+        barsUsedLabel: "Bars Used",
+        partsPlacedLabel: "Parts Placed",
+        totalUtilizationLabel: "Total Utilization",
+        totalOffcutLabel: "Total Offcut",
+        unallocatedPartsTitle: "Unallocated Parts",
+        unallocatedReason: "Reason: No stock bar has sufficient length.",
+        offcutsTitle: "Generated Offcuts (Usable)",
+        generateLabelsButton: "Generate Labels",
+        labelTitle: "Part Label",
+        includeSignaturesLabel: "Signatures",
+        signatureIssuer: "Issued By (PPC)",
+        signatureSupervisor: "Production Supervisor (CTCO/Sub)",
+        nameLabel: "Name", signatureLabel: "Signature", roleLabel: "Role", departmentLabel: "Department",
+        uploadStockTitle: "Upload an .xlsx or .csv file with columns: PO, Item, Qty, Stock Length (mm), Material, Heat Number, Description, Traceability",
+        uploadPartsTitle: "Upload an .xlsx or .csv file with columns: DWG Number, Mark, POS, Qty, Cut Length (mm), Material, Priority (1-3)",
+        printReportTitle: "Cutting Plan Report", classicReportTitle: "Tabular Cut Report", simpleReportTitle: "CUTTING SHEET",
+        copyRowTitle: "Duplicate Row", deleteRowTitle: "Delete Row",
+        stockStrategyLabel: "Stock Usage Strategy",
+        strategyBestFit: "Best Fit (Default)",
+        strategyPrioritizeOffcuts: "Prioritize Offcuts First",
+        strategySmallestBars: "Use Smallest Bars First",
+        addOffcutsToStock: "Add Offcuts to Stock",
+        processing: "Processing...",
+        optimizeSuccess: "Plan optimized successfully!",
+        optimizeError: "An error occurred during optimization.",
+        manageData: "Manage Data",
+        importPlans: "Import Saved Plans",
+        exportPlans: "Export Saved Plans",
+        clearAll: "Clear All",
+        plansImported: "Plans imported successfully!",
+        plansImportError: "Failed to import plans. Invalid file.",
+        confirmClear: "Are you sure you want to clear all data? This action cannot be undone.",
+        yesClear: "Yes, Clear All",
+        cancel: "Cancel",
+        thSeq: "Seq.",
+        fontSizeLabel: "Font Size",
+        printOptions: "Print Options",
+        printButtonPro: "Print Pro-Style",
+        reportTitlePro: "Cutting Report (1D Nest)",
+        barInfo: "Bar Info",
+        nestStats: "Nest Stats",
+        barLength: "Bar Length",
+        totalPieces: "Total Pieces",
+        partsList: "Parts List",
+        seq: "Seq.",
+        dwgRef: "DWG Ref.",
+        cutLength: "Cut L.",
+    },
+    "pt-br": {
+        title: "Otimizador de Plano de Corte",
+        subtitle: "Desenvolvido pela Saipem - Equipe de Fabricação do CTCO (PPC) · V1",
+        projectDataTitle: "Dados do Projeto",
+        reportDataTitle: "Dados do Relatório",
+        settingsTitle: "Configurações",
+        kerfLabel: "Kerf (mm)",
+        minOffcutLabel: "Retalho Mín. (mm)",
+        enableTrimLabel: "Habilitar Aparo?",
+        leftTrimLabel: "Aparo Esquerdo (mm)",
+        rightTrimLabel: "Aparo Direito (mm)",
+        stockTitle: "Estoque Disponível",
+        partsTitle: "Peças Requeridas",
+        calculateButton: "Otimizar Plano de Corte",
+        resultsTitle: "Resultados",
+        toggleLabelsButton: "Legendas",
+        toggleColorButton: "Cores",
+        exportButton: "Exportar",
+        printButton: "Imprimir Visual",
+        printButtonTabular: "Imprimir Tabular",
+        printButtonSimple: "Cutting Sheet",
+        saveButton: "Salvar Plano",
+        loadButton: "Carregar Plano",
+        loadPlanTitle: "Planos Salvos",
+        searchPlansPlaceholder: "Buscar por nome, projeto ou equipamento...",
+        noPlansFound: "Nenhum plano encontrado para sua busca.",
+        noPlansSaved: "Nenhum plano salvo encontrado.",
+        importCouponButton: "Importar Cupom de Material",
+        projectLabel: "Projeto", clientLabel: "Cliente", equipmentLabel: "Equipamento", preparedByLabel: "Preparado Por", receivedByLabel: "Recebido Por", workpackLabel: "Workpack", couponLabel: "Cupom de Material", dateLabel: "Data",
+        nestingSheetNumberLabel: "Nº da Folha de Corte", destinationLabel: "Destino",
+        thPO: "PO", thItem: "Item", thQty: "Qtd", thTraceability: "Rastreabilidade", thDescription: "Descrição", thMaterialGrade: "Material", thHeatNumber: "Heat Number", thStockLength: "Comp. (mm)",
+        thDwgNumber: "DWG Number", thMark: "Mark", thPOS: "POS", thCutLength: "Comp. Corte (mm)", thMaterial: "Material", thPriority: "Prioridade",
+        thActions: "Ações",
+        uploadButton: "Carregar",
+        cutSheetTitle: "Folha de Corte",
+        barLabel: "Barra",
+        diagramTitle: "Diagrama de Corte",
+        cutListTitle: "Lista de Corte",
+        utilizationLabel: "Aproveitamento",
+        offcutLabel: "Sobra",
+        summaryTitle: "Sumário Geral",
+        bestAlgorithm: "Melhor Algoritmo",
+        barsUsedLabel: "Barras Utilizadas",
+        partsPlacedLabel: "Peças Alocadas",
+        totalUtilizationLabel: "Aproveitamento Total",
+        totalOffcutLabel: "Sobra Total",
+        unallocatedPartsTitle: "Peças Não Alocadas",
+        unallocatedReason: "Motivo: Nenhuma barra de estoque possui comprimento suficiente.",
+        offcutsTitle: "Retalhos Gerados (Aproveitáveis)",
+        generateLabelsButton: "Gerar Etiquetas",
+        labelTitle: "Etiqueta de Peça",
+        includeSignaturesLabel: "Assinaturas",
+        signatureIssuer: "Responsável Emissão (PPC)",
+        signatureSupervisor: "Responsável Produção (CTCO/Sub)",
+        nameLabel: "Nome", signatureLabel: "Assinatura", roleLabel: "Cargo", departmentLabel: "Departamento",
+        uploadStockTitle: "Carregue um arquivo .xlsx ou .csv com as colunas: PO, Item, Qty, Stock Length (mm), Material, Heat Number, Description, Traceability",
+        uploadPartsTitle: "Carregue um arquivo .xlsx ou .csv com as colunas: DWG Number, Mark, POS, Qty, Cut Length (mm), Material, Priority (1-3)",
+        printReportTitle: "Relatório de Plano de Corte", classicReportTitle: "Relatório de Folha de Corte", simpleReportTitle: "CUTTING SHEET",
+        copyRowTitle: "Duplicar Linha", deleteRowTitle: "Excluir Linha",
+        stockStrategyLabel: "Estratégia de Uso de Estoque",
+        strategyBestFit: "Melhor Encaixe (Padrão)",
+        strategyPrioritizeOffcuts: "Priorizar Retalhos Primeiro",
+        strategySmallestBars: "Usar Barras Menores Primeiro",
+        addOffcutsToStock: "Adicionar Retalhos ao Estoque",
+        processing: "Processando...",
+        optimizeSuccess: "Plano otimizado com sucesso!",
+        optimizeError: "Ocorreu um erro durante a otimização.",
+        manageData: "Gerenciar Dados",
+        importPlans: "Importar Planos Salvos",
+        exportPlans: "Exportar Planos Salvos",
+        clearAll: "Limpar Tudo",
+        plansImported: "Planos importados com sucesso!",
+        plansImportError: "Falha ao importar planos. Arquivo inválido.",
+        confirmClear: "Tem certeza que deseja limpar todos os dados? Esta ação não pode ser desfeita.",
+        yesClear: "Sim, Limpar Tudo",
+        cancel: "Cancelar",
+        thSeq: "Seq.",
+        fontSizeLabel: "Tam. Fonte",
+        printOptions: "Opções de Impressão",
+        printButtonPro: "Imprimir (Pro-Style)",
+        reportTitlePro: "Relatório de Corte (Nesting 1D)",
+        barInfo: "Info. da Barra",
+        nestStats: "Estatísticas do Nest",
+        barLength: "Comp. da Barra",
+        totalPieces: "Total de Peças",
+        partsList: "Lista de Peças",
+        seq: "Seq.",
+        dwgRef: "Ref. DWG",
+        cutLength: "Comp. Corte",
+    },
+    "it": {
+        title: "Ottimizzatore Piano di Taglio",
+        subtitle: "Powered by Saipem - Fabrication CTCO (PPC) Team · V1",
+        projectDataTitle: "Dati Progetto",
+        reportDataTitle: "Dati Report",
+        settingsTitle: "Impostazioni",
+        kerfLabel: "Kerf (mm)",
+        minOffcutLabel: "Scarto Min. (mm)",
+        enableTrimLabel: "Abilita Sfrido?",
+        leftTrimLabel: "Sfrido Sinistro (mm)",
+        rightTrimLabel: "Sfrido Destro (mm)",
+        stockTitle: "Stock Disponibile",
+        partsTitle: "Parti Richieste",
+        calculateButton: "Ottimizza Piano di Taglio",
+        resultsTitle: "Risultati",
+        toggleLabelsButton: "Etichette",
+        toggleColorButton: "Colori",
+        exportButton: "Esporta",
+        printButton: "Stampa Visuale",
+        printButtonTabular: "Stampa Tabellare",
+        printButtonSimple: "Scheda di Taglio",
+        saveButton: "Salva Piano",
+        loadButton: "Carica Piano",
+        loadPlanTitle: "Piani Salvati",
+        searchPlansPlaceholder: "Cerca per nome, progetto, o attrezzatura...",
+        noPlansFound: "Nessun piano trovato per la tua ricerca.",
+        noPlansSaved: "Nessun piano salvato trovato.",
+        importCouponButton: "Importa Coupon Materiale",
+        projectLabel: "Progetto", clientLabel: "Cliente", equipmentLabel: "Attrezzatura", preparedByLabel: "Preparato Da", receivedByLabel: "Ricevuto Da", workpackLabel: "Workpack", couponLabel: "Coupon Materiale", dateLabel: "Data",
+        nestingSheetNumberLabel: "N° Scheda di Taglio", destinationLabel: "Destinazione",
+        thPO: "PO", thItem: "Articolo", thQty: "Qtà", thTraceability: "Tracciabilità", thDescription: "Descrizione", thMaterialGrade: "Materiale", thHeatNumber: "Heat Number", thStockLength: "Lunghezza (mm)",
+        thDwgNumber: "DWG Number", thMark: "Mark", thPOS: "POS", thCutLength: "Lunghezza Taglio (mm)", thMaterial: "Materiale", thPriority: "Priorità",
+        thActions: "Azioni",
+        uploadButton: "Carica",
+        cutSheetTitle: "Scheda di Taglio",
+        barLabel: "Barra",
+        diagramTitle: "Diagramma di Taglio",
+        cutListTitle: "Lista di Taglio",
+        utilizationLabel: "Utilizzo",
+        offcutLabel: "Scarto",
+        summaryTitle: "Riepilogo Generale",
+        bestAlgorithm: "Miglior Algoritmo",
+        barsUsedLabel: "Barre Utilizzate",
+        partsPlacedLabel: "Parti Piazzate",
+        totalUtilizationLabel: "Utilizzo Totale",
+        totalOffcutLabel: "Scarto Totale",
+        unallocatedPartsTitle: "Parti Non Allocate",
+        unallocatedReason: "Motivo: Nessuna barra in stock ha lunghezza sufficiente.",
+        offcutsTitle: "Scarti Generati (Utilizzabili)",
+        generateLabelsButton: "Genera Etichette",
+        labelTitle: "Etichetta Parte",
+        includeSignaturesLabel: "Firme",
+        signatureIssuer: "Emesso Da (PPC)",
+        signatureSupervisor: "Supervisore Produzione (CTCO/Sub)",
+        nameLabel: "Nome", signatureLabel: "Firma", roleLabel: "Ruolo", departmentLabel: "Dipartimento",
+        uploadStockTitle: "Carica un file .xlsx o .csv con le colonne: PO, Item, Qty, Stock Length (mm), Material, Heat Number, Description, Traceability",
+        uploadPartsTitle: "Carica un file .xlsx o .csv con le colonne: DWG Number, Mark, POS, Qty, Cut Length (mm), Material, Priority (1-3)",
+        printReportTitle: "Report Piano di Taglio", classicReportTitle: "Report Taglio Tabellare", simpleReportTitle: "SCHEDA DI TAGLIO",
+        copyRowTitle: "Duplica Riga", deleteRowTitle: "Elimina Riga",
+        stockStrategyLabel: "Strategia di Utilizzo dello Stock",
+        strategyBestFit: "Miglior Adattamento (Predefinito)",
+        strategyPrioritizeOffcuts: "Dai Priorità agli Scarti",
+        strategySmallestBars: "Usa Barre Più Piccole Prima",
+        addOffcutsToStock: "Aggiungi Scarti allo Stock",
+        processing: "In Elaborazione...",
+        optimizeSuccess: "Piano ottimizzato con successo!",
+        optimizeError: "Si è verificato un errore durante l'ottimizzazione.",
+        manageData: "Gestisci Dati",
+        importPlans: "Importa Piani Salvati",
+        exportPlans: "Esporta Piani Salvati",
+        clearAll: "Cancella Tutto",
+        plansImported: "Piani importati con successo!",
+        plansImportError: "Impossibile importare i piani. File non valido.",
+        confirmClear: "Sei sicuro di voler cancellare tutti i dati? Questa azione non può essere annullata.",
+        yesClear: "Sì, Cancella Tutto",
+        cancel: "Annulla",
+        thSeq: "Seq.",
+        fontSizeLabel: "Dim. Carattere",
+        printOptions: "Opci Stampa",
+        printButtonPro: "Stampa (Pro-Style)",
+        reportTitlePro: "Report di Taglio (Nest 1D)",
+        barInfo: "Info Barra",
+        nestStats: "Statistiche Nest",
+        barLength: "Lungh. Barra",
+        totalPieces: "Pezzi Totali",
+        partsList: "Lista Pezzi",
+        seq: "Seq.",
+        dwgRef: "Rif. DWG",
+        cutLength: "Lungh. Taglio",
+    },
+    "fr": {
+        title: "Optimisateur de Plan de Coupe",
+        subtitle: "Propulsé par Saipem - Équipe Fabrication CTCO · V1",
+        projectDataTitle: "Données du Projet",
+        reportDataTitle: "Données du Rapport",
+        settingsTitle: "Paramètres",
+        kerfLabel: "Kerf (mm)",
+        minOffcutLabel: "Chute Min. (mm)",
+        enableTrimLabel: "Activer la Rognure?",
+        leftTrimLabel: "Rognure Gauche (mm)",
+        rightTrimLabel: "Rognure Droite (mm)",
+        stockTitle: "Stock Disponible",
+        partsTitle: "Pièces Requises",
+        calculateButton: "Optimiser le Plan de Coupe",
+        resultsTitle: "Résultats",
+        toggleLabelsButton: "Étiquettes",
+        toggleColorButton: "Couleurs",
+        exportButton: "Exporter",
+        printButton: "Imprimer Visuel",
+        printButtonTabular: "Imprimer Tabulaire",
+        printButtonSimple: "Fiche de Coupe",
+        saveButton: "Sauvegarder Plan",
+        loadButton: "Charger Plan",
+        loadPlanTitle: "Plans Sauvegardés",
+        searchPlansPlaceholder: "Rechercher par nom, projet, ou équipement...",
+        noPlansFound: "Aucun plan trouvé pour votre recherche.",
+        noPlansSaved: "Aucun plan sauvegardé trouvé.",
+        importCouponButton: "Importer Coupon Matériau",
+        projectLabel: "Projet", clientLabel: "Client", equipmentLabel: "Équipement", preparedByLabel: "Préparé Par", receivedByLabel: "Reçu Par", workpackLabel: "Workpack", couponLabel: "Coupon Matériau", dateLabel: "Date",
+        nestingSheetNumberLabel: "N° de Fiche de Coupe", destinationLabel: "Destination",
+        thPO: "PO", thItem: "Article", thQty: "Qté", thTraceability: "Traçabilité", thDescription: "Description", thMaterialGrade: "Matériau", thHeatNumber: "Heat Number", thStockLength: "Longueur (mm)",
+        thDwgNumber: "DWG Number", thMark: "Mark", thPOS: "POS", thCutLength: "Longueur Coupe (mm)", thMaterial: "Matériau", thPriority: "Priorité",
+        thActions: "Actions",
+        uploadButton: "Charger",
+        cutSheetTitle: "Fiche de Coupe",
+        barLabel: "Barre",
+        diagramTitle: "Diagramme de Coupe",
+        cutListTitle: "Liste de Coupe",
+        utilizationLabel: "Utilisation",
+        offcutLabel: "Chute",
+        summaryTitle: "Résumé Général",
+        bestAlgorithm: "Meilleur Algorithme",
+        barsUsedLabel: "Barres Utilisées",
+        partsPlacedLabel: "Pièces Placées",
+        totalUtilizationLabel: "Utilisation Totale",
+        totalOffcutLabel: "Chute Totale",
+        unallocatedPartsTitle: "Pièces Non Allouées",
+        unallocatedReason: "Raison: Aucune barre en stock n'a une longueur suffisante.",
+        offcutsTitle: "Chutes Générées (Utilisables)",
+        generateLabelsButton: "Générer Étiquettes",
+        labelTitle: "Étiquette Pièce",
+        includeSignaturesLabel: "Signatures",
+        signatureIssuer: "Émis Par (PPC)",
+        signatureSupervisor: "Superviseur Production (CTCO/Sub)",
+        nameLabel: "Nom", signatureLabel: "Signature", roleLabel: "Rôle", departmentLabel: "Département",
+        uploadStockTitle: "Téléchargez un fichier .xlsx ou .csv avec les colonnes: PO, Item, Qty, Stock Length (mm), Material, Heat Number, Description, Traceability",
+        uploadPartsTitle: "Téléchargez un fichier .xlsx ou .csv avec les colonnes: DWG Number, Mark, POS, Qty, Cut Length (mm), Material, Priority (1-3)",
+        printReportTitle: "Rapport Plan de Coupe", classicReportTitle: "Rapport de Coupe Tabulaire", simpleReportTitle: "FICHE DE COUPE",
+        copyRowTitle: "Dupliquer Ligne", deleteRowTitle: "Supprimer Ligne",
+        stockStrategyLabel: "Stratégie d'Utilisation du Stock",
+        strategyBestFit: "Meilleur Ajustement (Défaut)",
+        strategyPrioritizeOffcuts: "Prioriser les Chutes d'Abord",
+        strategySmallestBars: "Utiliser les Plus Petites Barres d'Abord",
+        addOffcutsToStock: "Ajouter les Chutes au Stock",
+        processing: "Traitement...",
+        optimizeSuccess: "Plan optimisé avec succès !",
+        optimizeError: "Une erreur est survenue lors de l'optimisation.",
+        manageData: "Gérer les Données",
+        importPlans: "Importer les Plans",
+        exportPlans: "Exporter les Plans",
+        clearAll: "Tout Effacer",
+        plansImported: "Plans importés avec succès !",
+        plansImportError: "Échec de l'importation des plans. Fichier invalide.",
+        confirmClear: "Voulez-vous really effacer toutes les données ? Cette action est irréversible.",
+        yesClear: "Oui, Tout Effacer",
+        cancel: "Annuler",
+        thSeq: "Seq.",
+        fontSizeLabel: "Taille Police",
+        printOptions: "Options d'impression",
+        printButtonPro: "Imprimer (Pro-Style)",
+        reportTitlePro: "Rapport de Coupe (Nesting 1D)",
+        barInfo: "Info Barre",
+        nestStats: "Statistiques Nest",
+        barLength: "Long. Barre",
+        totalPieces: "Pièces Totales",
+        partsList: "Liste des Pièces",
+        seq: "Seq.",
+        dwgRef: "Réf. DWG",
+        cutLength: "Long. Coupe",
+    }
+};
+let currentLang = 'en';
+
+// --- DOM ELEMENTS ---
+const DOMElements = {
+    body: document.body,
+    calculateBtn: document.getElementById('calculate'),
+    calculateBtnText: document.getElementById('calculate-text'),
+    calculateBtnSpinner: document.getElementById('calculate-spinner'),
+    resultsContainer: document.getElementById('results-container'),
+    resultsVisual: document.getElementById('results-visual'),
+    resultsSummary: document.getElementById('results-summary'),
+    offcutsContainer: document.getElementById('offcuts-container'),
+    exportExcelBtn: document.getElementById('export-excel-btn'),
+    printBtn: document.getElementById('print-btn'),
+    printClassicBtn: document.getElementById('print-classic-btn'),
+    printSimpleBtn: document.getElementById('print-simple-btn'),
+    printProBtn: document.getElementById('print-pro-btn'),
+    languageSelector: document.getElementById('language-selector'),
+    toggleLabelMarkBtn: document.getElementById('toggle-label-mark'),
+    toggleLabelPosBtn: document.getElementById('toggle-label-pos'),
+    toggleLabelLengthBtn: document.getElementById('toggle-label-length'),
+    toggleColorsBtn: document.getElementById('toggle-colors-btn'),
+    addStockBtn: document.getElementById('add-stock'),
+    addPartBtn: document.getElementById('add-part'),
+    stockListBody: document.getElementById('stock-list'),
+    partsListBody: document.getElementById('parts-list'),
+    reportDateInput: document.getElementById('report-date'),
+    preparedByDateInput: document.getElementById('prepared-by-date'),
+    receivedByDateInput: document.getElementById('received-by-date'),
+    savePlanBtn: document.getElementById('save-plan-btn'),
+    loadPlanBtn: document.getElementById('load-plan-btn'),
+    uploadStockBtn: document.getElementById('upload-stock-btn'),
+    stockFileInput: document.getElementById('stock-file-input'),
+    uploadPartsBtn: document.getElementById('upload-parts-btn'),
+    partsFileInput: document.getElementById('parts-file-input'),
+    importCouponBtn: document.getElementById('import-coupon-btn'),
+    couponFileInput: document.getElementById('coupon-file-input'),
+    modal: document.getElementById('modal'),
+    modalTitle: document.getElementById('modal-title'),
+    modalBody: document.getElementById('modal-body'),
+    modalFooter: document.getElementById('modal-footer'),
+    clearAllBtn: document.getElementById('clear-all-btn'),
+    exportPlansBtn: document.getElementById('export-plans-btn'),
+    importPlansBtn: document.getElementById('import-plans-btn'),
+    importPlansInput: document.getElementById('import-plans-input'),
+    toggleLabelSeqBtn: document.getElementById('toggle-label-seq'),
+    labelFontSizeSlider: document.getElementById('label-font-size-slider'),
+    labelFontSizeValue: document.getElementById('label-font-size-value'),
+    printDropdownBtn: document.getElementById('print-dropdown-btn'),
+    enableTrimCheck: document.getElementById('enable-trim'),
+    trimInputsContainer: document.getElementById('trim-inputs-container'),
+    leftTrimInput: document.getElementById('left-trim'),
+    rightTrimInput: document.getElementById('right-trim'),
+};
+
+// --- STATE ---
+let lastSolution = null;
+let savedPlans = {};
+let offcutsStock = [];
+let showMark = false;
+let showPos = true;
+let showLength = true;
+let isPrintMonochrome = false;
+let showSeq = false;
+let labelFontSize = 9;
+const pieceColors = ["#4299e1", "#ed8936", "#48bb78", "#9f7aea", "#f56565", "#38b2ac", "#ed64a6", "#a0aec0", "#f6e05e", "#667eea"];
+
+
+// --- ALL FUNCTION DEFINITIONS ---
+
+const showToast = (message, type = 'success') => {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    
+    setTimeout(() => toast.classList.add('show'), 100);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 500);
+    }, 4000);
+};
+
+
+const showModal = ({ title, body, buttons }) => {
+    DOMElements.modalTitle.textContent = title;
+    DOMElements.modalBody.innerHTML = '';
+    DOMElements.modalBody.appendChild(body);
+    DOMElements.modalFooter.innerHTML = '';
+    buttons.forEach(btnConfig => {
+        const button = document.createElement('button');
+        button.textContent = btnConfig.text;
+        button.className = btnConfig.classes;
+        button.addEventListener('click', () => {
+            if (btnConfig.onClick) btnConfig.onClick();
+            hideModal();
+        });
+        DOMElements.modalFooter.appendChild(button);
+    });
+    DOMElements.modal.classList.add('visible');
+};
+
+const hideModal = () => DOMElements.modal.classList.remove('visible');
+
+const createStockRow = (data = {}) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.po || ''}"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.item || ''}"></td>
+        <td class="p-1"><input type="number" data-type="qty" class="w-20 border-gray-300 rounded-md text-sm p-1" value="${data.qty || 1}" min="1"></td>
+        <td class="p-1"><input type="number" data-type="length" class="w-32 border-gray-300 rounded-md text-sm p-1" value="${data.length || ''}" min="0"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.materialGrade || ''}"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.heatNumber || ''}"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.description || ''}"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.traceability || ''}"></td>
+        <td class="p-1 text-center">
+            <button class="px-2 py-1 copy-row" data-translate-title="copyRowTitle" title="Duplicate Row">📋</button>
+            <button class="px-2 py-1 remove-row text-red-500 hover:text-red-700" data-translate-title="deleteRowTitle" title="Delete Row">✖</button>
+        </td>
+    `;
+    return tr;
+};
+
+const createPartRow = (data = {}) => {
+    const tr = document.createElement('tr');
+    const priority = data.priority || 2;
+    tr.innerHTML = `
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.dwgNumber || ''}"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.mark || ''}"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-20 border-gray-300 rounded-md text-sm p-1" value="${data.pos || ''}"></td>
+        <td class="p-1"><input type="number" data-type="qty" class="w-20 border-gray-300 rounded-md text-sm p-1" value="${data.qty || 1}" min="1"></td>
+        <td class="p-1"><input type="number" data-type="length" class="w-32 border-gray-300 rounded-md text-sm p-1" value="${data.length || ''}" min="0"></td>
+        <td class="p-1"><input type="text" data-type="text" class="w-full border-gray-300 rounded-md text-sm p-1" value="${data.material || ''}"></td>
+        <td class="p-1">
+            <select data-type="text" class="w-24 border-gray-300 rounded-md text-sm p-1">
+                <option value="1" ${priority == 1 ? 'selected' : ''}>1 (High)</option>
+                <option value="2" ${priority == 2 ? 'selected' : ''}>2 (Medium)</option>
+                <option value="3" ${priority == 3 ? 'selected' : ''}>3 (Low)</option>
+            </select>
+        </td>
+        <td class="p-1 text-center">
+            <button class="px-2 py-1 copy-row" data-translate-title="copyRowTitle" title="Duplicate Row">📋</button>
+            <button class="px-2 py-1 remove-row text-red-500 hover:text-red-700" data-translate-title="deleteRowTitle" title="Delete Row">✖</button>
+        </td>
+    `;
+    return tr;
+};
+
+const validateAllTables = () => {
+    let isAllValid = true;
+    const inputs = document.querySelectorAll('#stock-list input, #parts-list input');
+
+    inputs.forEach(input => {
+        let isValid = true;
+        const type = input.dataset.type;
+        const value = input.value;
+
+        if (type === 'qty' || type === 'length') {
+            const numValue = safeParseFloat(value);
+            if (value === '' || numValue <= 0) {
+                isValid = false;
+            }
+        }
+        
+        if (isValid) {
+            input.classList.remove('input-error');
+        } else {
+            input.classList.add('input-error');
+            isAllValid = false;
+        }
+    });
+
+    DOMElements.calculateBtn.disabled = !isAllValid;
+};
+
+const parseTableData = (tbody, fields) => {
+    const data = [];
+    tbody.querySelectorAll('tr').forEach((row, rowIndex) => {
+        const inputs = row.querySelectorAll('input, select');
+        const rowData = {};
+        let isValid = true;
+        fields.forEach((field, index) => {
+            const parser = field.type === 'int' ? safeParseInt : safeParseFloat;
+            const value = field.isText ? inputs[index].value.trim() : parser(inputs[index].value);
+            rowData[field.name] = value;
+            if ((field.name === 'length' || field.name === 'qty') && value <= 0) isValid = false;
+        });
+        if(isValid) {
+            rowData.isOffcut = /offcut/i.test(rowData.description);
+            for (let i = 0; i < rowData.qty; i++) {
+                data.push({ ...rowData, id: `${fields[0].name}-${rowIndex}-${i}` });
+            }
+        }
+    });
+    return data;
+};
+
+const parseStockDataFromUI = () => parseTableData(DOMElements.stockListBody, [
+    { name: 'po', isText: true }, { name: 'item', isText: true },
+    { name: 'qty', type: 'int' }, { name: 'length', type: 'float' },
+    { name: 'materialGrade', isText: true }, { name: 'heatNumber', isText: true },
+    { name: 'description', isText: true }, { name: 'traceability', isText: true }
+]);
+
+const parsePartsDataFromUI = () => parseTableData(DOMElements.partsListBody, [
+    { name: 'dwgNumber', isText: true }, { name: 'mark', isText: true }, { name: 'pos', isText: true },
+    { name: 'qty', type: 'int' }, { name: 'length', type: 'float' },
+    { name: 'material', isText: true }, { name: 'priority', type: 'int' }
+]);
+
+const allocateParts = (parts, stock, kerf, minOffcut, stockUsageStrategy, algorithmStrategy) => {
+    
+    const enableTrim = DOMElements.enableTrimCheck.checked;
+    const leftTrim = enableTrim ? safeParseFloat(DOMElements.leftTrimInput.value) : 0;
+    const rightTrim = enableTrim ? safeParseFloat(DOMElements.rightTrimInput.value) : 0;
+
+    let availableStockBars = JSON.parse(JSON.stringify(stock)).map(s => ({ 
+        ...s, 
+        originalLength: s.length, 
+        remaining: s.length - leftTrim - rightTrim,
+        leftTrim: leftTrim,
+        rightTrim: rightTrim,
+        pieces: [] 
+    }));
+    let unplacedParts = [];
+    
+    if (stockUsageStrategy === 'prioritize-offcuts') {
+        const offcuts = availableStockBars.filter(bar => bar.isOffcut).sort((a,b) => a.length - b.length);
+        const primary = availableStockBars.filter(bar => !bar.isOffcut);
+        availableStockBars = [...offcuts, ...primary];
+    } else if (stockUsageStrategy === 'smallest-bars') {
+        availableStockBars.sort((a, b) => a.length - b.length);
+    }
+
+    const sortedParts = [...parts].sort((a, b) => a.priority - b.priority || b.length - a.length);
+
+    if (algorithmStrategy === 'first-fit') {
+        sortedParts.forEach(part => {
+            let placed = false;
+            for (let bar of availableStockBars) {
+                if (bar.materialGrade && part.material && bar.materialGrade !== part.material) continue;
+                const lengthNeeded = bar.pieces.length > 0 ? part.length + kerf : part.length;
+                if (bar.remaining >= lengthNeeded) {
+                    bar.pieces.push(part);
+                    bar.remaining -= lengthNeeded;
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) unplacedParts.push(part);
+        });
+    } 
+    else if (algorithmStrategy === 'best-fit') {
+        sortedParts.forEach(part => {
+            let bestBar = null;
+            let bestRemaining = Infinity;
+            for (let bar of availableStockBars) {
+                if (bar.materialGrade && part.material && bar.materialGrade !== part.material) continue;
+                const lengthNeeded = bar.pieces.length > 0 ? part.length + kerf : part.length;
+                if (bar.remaining >= lengthNeeded) {
+                    const remainingAfterCut = bar.remaining - lengthNeeded;
+                    if (remainingAfterCut < bestRemaining) {
+                        bestBar = bar;
+                        bestRemaining = remainingAfterCut;
+                    }
+                }
+            }
+            if (bestBar) {
+                const lengthNeeded = bestBar.pieces.length > 0 ? part.length + kerf : part.length;
+                bestBar.pieces.push(part);
+                bestBar.remaining -= lengthNeeded;
+            } else {
+                unplacedParts.push(part);
+            }
+        });
+    }
+
+    const stockUsed = availableStockBars.filter(bar => bar.pieces.length > 0);
+    const generatedOffcuts = [];
+    stockUsed.forEach(bar => {
+        if (bar.remaining >= minOffcut) {
+            generatedOffcuts.push({
+                ...bar,
+                length: bar.remaining,
+                qty: 1,
+                description: `Offcut from ${bar.description}`,
+                traceability: `${bar.traceability}_OC`,
+                isOffcut: true,
+                leftTrim: 0,
+                rightTrim: 0
+            });
+        }
+    });
+
+    const totalStockLength = stockUsed.reduce((sum, bar) => sum + bar.originalLength, 0);
+    const totalRemaining = stockUsed.reduce((sum, bar) => sum + bar.remaining, 0); 
+    const totalTrims = stockUsed.reduce((sum, bar) => sum + bar.leftTrim + bar.rightTrim, 0);
+    const totalUsedLength = totalStockLength - totalRemaining - totalTrims; 
+    
+    return { stockUsed, unplacedParts, totalStockLength, totalRemaining, totalTrims, generatedOffcuts, minOffcut };
+};
+
+const runAllocations = () => {
+    return new Promise((resolve, reject) => {
+        try {
+            const stockInput = parseStockDataFromUI();
+            const parts = parsePartsDataFromUI().map(p => ({...p, partId: generateUUID()}));
+            const kerf = safeParseFloat(document.getElementById('kerf').value);
+            const minOffcut = safeParseFloat(document.getElementById('min-offcut').value);
+            const stockUsageStrategy = document.getElementById('stock-strategy').value;
+
+            if (stockInput.length === 0 || parts.length === 0) {
+                resolve(null);
+                return;
+            }
+            
+            const ffdSolution = allocateParts(parts, stockInput, kerf, minOffcut, stockUsageStrategy, 'first-fit');
+            const bfdSolution = allocateParts(parts, stockInput, kerf, minOffcut, stockUsageStrategy, 'best-fit');
+
+            const ffdUsedLength = ffdSolution.totalStockLength - ffdSolution.totalRemaining - ffdSolution.totalTrims;
+            const bfdUsedLength = bfdSolution.totalStockLength - bfdSolution.totalRemaining - bfdSolution.totalTrims;
+
+            const ffdUtilization = ffdSolution.totalStockLength > 0 ? (ffdUsedLength / ffdSolution.totalStockLength) : 0;
+            const bfdUtilization = bfdSolution.totalStockLength > 0 ? (bfdUsedLength / bfdSolution.totalStockLength) : 0;
+            
+            if (bfdUtilization >= ffdUtilization) {
+                resolve({ ...bfdSolution, algorithm: 'Best-Fit Decreasing (BFD)', allParts: parts, kerf, minOffcut });
+            } else {
+                resolve({ ...ffdSolution, algorithm: 'First-Fit Decreasing (FFD)', allParts: parts, kerf, minOffcut });
+            }
+        } catch(error) {
+            console.error("Allocation failed:", error);
+            reject(error);
+        }
+    });
+};
+
+const getPieceLabel = (piece) => {
+    const parts = [];
+    if (showSeq && piece.seq) {
+        parts.push(piece.seq);
+    } else {
+        if (showMark && piece.mark) parts.push(piece.mark);
+        if (showPos && piece.pos) parts.push(piece.pos);
+    }
+    
+    const text = parts.join(' - ');
+    const hasText = text !== '';
+
+    let labelContent = '';
+    if (hasText) {
+        labelContent += `<span class="piece-caption">${text}</span>`;
+    }
+    if (showLength) {
+        labelContent += `${hasText ? ' ' : ''}<span class="piece-length">(${piece.length}mm)</span>`;
+    }
+
+    if (labelContent === '') return `<span>&nbsp;</span>`;
+    return labelContent;
+};
+
+const updatePieceLabels = () => {
+    if (!lastSolution) return;
+    document.querySelectorAll('.stock-bar').forEach((barEl, barIndex) => {
+        const barData = lastSolution.stockUsed[barIndex];
+        if (!barData) return;
+        
+        barEl.querySelectorAll('.piece[data-part-id]').forEach(pieceEl => {
+            const partId = pieceEl.dataset.partId;
+            const pieceData = barData.pieces.find(p => p.partId === partId);
+            if(pieceData) {
+                pieceEl.innerHTML = getPieceLabel(pieceData) + `<div class="tooltip">${pieceData.dwgNumber} - ${pieceData.mark} - ${pieceData.pos}</div>`;
+            }
+        });
+    });
+};
+
+const createCutSheetElement = (bar, index, solution) => {
+    const { kerf } = solution;
+    const currentTranslations = translations[currentLang];
+    
+    const leftTrim = bar.leftTrim || 0;
+    const rightTrim = bar.rightTrim || 0;
+    const leftTrimWidth = leftTrim > 0 ? (leftTrim / bar.originalLength) * 100 : 0;
+    const rightTrimWidth = rightTrim > 0 ? (rightTrim / bar.originalLength) * 100 : 0;
+    
+    const totalUsedLength = bar.originalLength - bar.remaining - leftTrim - rightTrim;
+    const utilization = bar.originalLength > 0 ? (totalUsedLength / bar.originalLength) * 100 : 0;
+    
+    const cutSheet = document.createElement('div');
+    cutSheet.className = 'cut-sheet space-y-4';
+
+    const layoutLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const layoutId = layoutLetters[index % layoutLetters.length] + (Math.floor(index / layoutLetters.length) > 0 ? Math.floor(index / layoutLetters.length) : '');
+    
+    const header = document.createElement('div');
+    header.className = 'flex justify-between items-start border-b pb-2';
+    header.innerHTML = `
+        <div>
+            <h3 class="text-xl font-bold saipem-deep-teal">${currentTranslations.cutSheetTitle}: ${layoutId}</h3>
+            <p class="text-sm text-gray-600">${bar.description || 'N/A'}</p>
+        </div>
+        <div class="text-right text-xs text-gray-500">
+            <p><strong>PO:</strong> ${bar.po || 'N/A'} / <strong>Item:</strong> ${bar.item || 'N/A'}</p>
+            <p><strong>${currentTranslations.thMaterialGrade}:</strong> ${bar.materialGrade || 'N/A'} / <strong>${currentTranslations.thHeatNumber}:</strong> ${bar.heatNumber || 'N/A'}</p>
+            <p><strong>${currentTranslations.thTraceability}:</strong> ${bar.traceability || 'N/A'}</p>
+        </div>`;
+    cutSheet.appendChild(header);
+
+    const visualContainer = document.createElement('div');
+    visualContainer.innerHTML = `<h4 class="text-sm font-semibold text-gray-700 mt-4 mb-1">${currentTranslations.diagramTitle} (${currentTranslations.barLabel}: ${bar.originalLength}mm)</h4>`;
+    const stockBar = document.createElement('div');
+    stockBar.className = 'stock-bar';
+    
+    let currentPos = leftTrimWidth;
+    
+    if (leftTrimWidth > 0) {
+        const trimEl = document.createElement('div');
+        trimEl.className = 'piece piece-trim';
+        trimEl.style.cssText = `left: 0%; width: ${leftTrimWidth}%;`;
+        trimEl.innerHTML = `<span style="font-size: 0.8em;">TRIM ${leftTrim}mm</span>`;
+        stockBar.appendChild(trimEl);
+    }
+    
+    bar.pieces.forEach((p, i) => { p.seq = i + 1; });
+    
+    bar.pieces.forEach((p, i) => {
+        const pieceWidth = (p.length / bar.originalLength) * 100;
+        const kerfWidth = (kerf / bar.originalLength) * 100;
+        const key = `${p.mark || ''}-${p.pos || ''}`;
+        const pieceColor = solution.partColorMap.get(key) || '#a0aec0';
+        
+        const pieceEl = document.createElement('div');
+        pieceEl.className = 'piece';
+        pieceEl.style.cssText = `left:${currentPos}%; width:${pieceWidth}%; background-color: ${pieceColor};`;
+        pieceEl.innerHTML = getPieceLabel(p) + `<div class="tooltip">${p.dwgNumber} - ${p.mark} - ${p.pos}</div>`;
+        pieceEl.dataset.partId = p.partId;
+        stockBar.appendChild(pieceEl);
+        currentPos += pieceWidth;
+
+        if (i < bar.pieces.length - 1) {
+            const kerfEl = document.createElement('div');
+            kerfEl.className = 'piece piece-kerf';
+            kerfEl.style.cssText = `left:${currentPos}%; width:${kerfWidth}%;`;
+            kerfEl.title = `Kerf: ${kerf}mm`;
+            stockBar.appendChild(kerfEl);
+            currentPos += kerfWidth;
+        }
+    });
+
+    if (rightTrimWidth > 0) {
+        const trimEl = document.createElement('div');
+        trimEl.className = 'piece piece-trim';
+        trimEl.style.cssText = `left: ${100 - rightTrimWidth}%; width: ${rightTrimWidth}%;`;
+        trimEl.innerHTML = `<span style="font-size: 0.8em;">TRIM ${rightTrim}mm</span>`;
+        stockBar.appendChild(trimEl);
+    }
+
+    if (bar.remaining > 0.001) {
+        const offcutWidth = (bar.remaining / bar.originalLength) * 100;
+        const offcutEl = document.createElement('div');
+        offcutEl.className = 'piece piece-offcut';
+        offcutEl.style.cssText = `left:${currentPos}%; width:${offcutWidth}%;`;
+        offcutEl.innerHTML = `<span>${currentTranslations.offcutLabel}: ${safeToFixed(bar.remaining, 0)}mm</span>`;
+        stockBar.appendChild(offcutEl);
+    }
+    
+    visualContainer.appendChild(stockBar);
+    cutSheet.appendChild(visualContainer);
+
+    const tableContainer = document.createElement('div');
+    tableContainer.className = 'mt-4';
+    let tableHTML = `<h4 class="text-sm font-semibold text-gray-700 mb-1">${currentTranslations.cutListTitle}</h4><table class="min-w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thSeq}</th><th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thDwgNumber}</th><th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thMark}</th><th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thPOS}</th><th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thCutLength}</th></tr></thead><tbody>`;
+    bar.pieces.forEach((p, i) => { tableHTML += `<tr class="border-b"><td class="px-2 py-1">${i + 1}</td><td class="px-2 py-1">${p.dwgNumber}</td><td class="px-2 py-1">${p.mark}</td><td class="px-2 py-1">${p.pos}</td><td class="px-2 py-1">${p.length}</td></tr>`; });
+    tableHTML += `</tbody></table>`;
+    tableContainer.innerHTML = tableHTML;
+    cutSheet.appendChild(tableContainer);
+
+    const footer = document.createElement('div');
+    footer.className = "flex justify-between items-center pt-2 border-t mt-4";
+    const summaryContainer = document.createElement('div');
+    summaryContainer.className = "text-sm font-semibold saipem-deep-teal";
+    summaryContainer.innerHTML = `<span>${currentTranslations.utilizationLabel}: <span class="text-green-600">${safeToFixed(utilization, 1)}%</span></span> | <span>${currentTranslations.offcutLabel}: <span class="saipem-orange">${safeToFixed(bar.remaining, 0)} mm</span></span>`;
+    
+    const labelsBtn = document.createElement('button');
+    labelsBtn.className = 'text-sm bg-purple-600 text-white py-1 px-3 rounded-md hover:bg-purple-700 transition no-print';
+    labelsBtn.innerHTML = `<i class="fas fa-tags mr-2"></i> ${currentTranslations.generateLabelsButton}`;
+    labelsBtn.onclick = () => generateLabels(bar.pieces, { ...getProjectData(), cutSheetId: layoutId });
+    
+    footer.appendChild(summaryContainer);
+    footer.appendChild(labelsBtn);
+    cutSheet.appendChild(footer);
+
+    return cutSheet;
+};
+
+const renderSolution = (solution) => {
+    const { stockUsed, unplacedParts, allParts, algorithm } = solution;
+    const currentTranslations = translations[currentLang];
+    
+    const partColorMap = new Map();
+    let nextColorIndex = 0;
+    
+    solution.allParts.forEach(piece => {
+        const key = `${piece.mark || ''}-${piece.pos || ''}`;
+        if (!partColorMap.has(key)) {
+            partColorMap.set(key, pieceColors[nextColorIndex % pieceColors.length]);
+            nextColorIndex++;
+        }
+    });
+    solution.partColorMap = partColorMap; 
+
+    DOMElements.resultsVisual.innerHTML = '';
+    
+    if (stockUsed.length === 0 && unplacedParts.length > 0) {
+        DOMElements.resultsVisual.innerHTML = `<p class="text-yellow-600 p-4 bg-yellow-50 rounded-md">${currentTranslations.unallocatedReason}</p>`;
+    } else {
+        stockUsed.forEach((bar, index) => {
+            const cutSheetElement = createCutSheetElement(bar, index, solution);
+            DOMElements.resultsVisual.appendChild(cutSheetElement);
+        });
+    }
+    
+    const totalStockLength = solution.totalStockLength;
+    const totalRemaining = solution.totalRemaining;
+    const totalTrims = solution.totalTrims;
+    const totalUsedLength = totalStockLength - totalRemaining - totalTrims;
+    const overallUtilization = totalStockLength > 0 ? (totalUsedLength / totalStockLength) * 100 : 0;
+    
+    let summaryHTML = `<h3 class="font-bold text-lg mb-2">${currentTranslations.summaryTitle}</h3>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-blue-50 p-3 rounded-md"><strong class="block text-blue-800">${currentTranslations.bestAlgorithm}</strong><span class="text-lg font-semibold">${algorithm}</span></div>
+        <div class="bg-green-50 p-3 rounded-md"><strong class="block text-green-800">${currentTranslations.totalUtilizationLabel}</strong><span class="text-lg font-semibold">${safeToFixed(overallUtilization, 1)}%</span></div>
+        <div class="bg-yellow-50 p-3 rounded-md"><strong class="block text-yellow-800">${currentTranslations.barsUsedLabel}</strong><span class="text-lg font-semibold">${stockUsed.length}</span></div>
+        <div class="bg-purple-50 p-3 rounded-md"><strong class="block text-purple-800">${currentTranslations.partsPlacedLabel}</strong><span class="text-lg font-semibold">${allParts.length - unplacedParts.length} / ${allParts.length}</span></div>
+    </div>`;
+
+    if (unplacedParts.length > 0) {
+        summaryHTML += `<div class="mt-4"><p class="font-bold text-red-600">${currentTranslations.unallocatedPartsTitle}:</p><ul class="list-disc list-inside text-sm text-red-600">`;
+        const groupedUnplaced = unplacedParts.reduce((acc, p) => {
+            const key = `${p.mark}|${p.length}|${p.material}`;
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+        }, {});
+        Object.entries(groupedUnplaced).forEach(([key, count]) => {
+            const [mark, length, material] = key.split('|');
+            summaryHTML += `<li title="${currentTranslations.unallocatedReason}">${count}x - Mark: ${mark} (Length: ${length}mm, Material: ${material})</li>`;
+        });
+        summaryHTML += `</ul></div>`;
+    }
+    DOMElements.resultsSummary.innerHTML = summaryHTML;
+    
+    offcutsStock = solution.generatedOffcuts;
+    updateOffcutsDisplay();
+
+    DOMElements.resultsContainer.classList.remove('hidden');
+    
+    const resultButtonsDisabled = stockUsed.length === 0;
+    [DOMElements.toggleLabelSeqBtn, DOMElements.toggleLabelMarkBtn, DOMElements.toggleLabelPosBtn, DOMElements.toggleLabelLengthBtn, DOMElements.labelFontSizeSlider, DOMElements.toggleColorsBtn, DOMElements.exportExcelBtn, DOMElements.printDropdownBtn, DOMElements.printBtn, DOMElements.printClassicBtn, DOMElements.printSimpleBtn, DOMElements.printProBtn].forEach(btn => btn.disabled = resultButtonsDisabled);
+    
+    const signatureContainer = document.getElementById('signature-toggle-container');
+    if (signatureContainer) {
+        resultButtonsDisabled ? signatureContainer.classList.add('hidden') : signatureContainer.classList.remove('hidden');
+    }
+};
+
+const updateOffcutsDisplay = () => {
+    const currentTranslations = translations[currentLang];
+    DOMElements.offcutsContainer.innerHTML = '';
+    if(offcutsStock.length > 0) {
+        let headerHTML = `<div class="flex justify-between items-center mb-2">
+            <h3 class="text-lg font-semibold text-gray-700">${currentTranslations.offcutsTitle}</h3>
+            <button id="add-offcuts-btn" class="text-sm bg-teal-600 text-white py-1 px-3 rounded-md hover:bg-teal-700 transition flex items-center">
+                <i class="fas fa-plus-circle mr-2"></i> ${currentTranslations.addOffcutsToStock}
+            </button>
+        </div>`;
+        
+        let tableHTML = `<div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+        <thead class="bg-gray-50"><tr>
+            <th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thStockLength}</th>
+            <th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thMaterialGrade}</th>
+            <th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thDescription}</th>
+            <th class="px-2 py-1 text-left font-medium text-gray-600">${currentTranslations.thTraceability}</th>
+        </tr></thead><tbody>`;
+        offcutsStock.forEach(offcut => {
+            tableHTML += `<tr class="border-b">
+                <td class="px-2 py-1">${safeToFixed(offcut.length, 0)}</td>
+                <td class="px-2 py-1">${offcut.materialGrade}</td>
+                <td class="px-2 py-1">${offcut.description}</td>
+                <td class="px-2 py-1">${offcut.traceability}</td>
+            </tr>`;
+        });
+        tableHTML += `</tbody></table></div>`;
+        DOMElements.offcutsContainer.innerHTML = headerHTML + tableHTML;
+
+        document.getElementById('add-offcuts-btn').addEventListener('click', () => {
+            offcutsStock.forEach(offcut => {
+                const stockRow = createStockRow(offcut);
+                DOMElements.stockListBody.appendChild(stockRow);
+            });
+            offcutsStock = [];
+            updateOffcutsDisplay();
+            validateAllTables();
+        });
+    }
+};
+
+const loadPlansFromStorage = () => {
+    try {
+        savedPlans = JSON.parse(localStorage.getItem('cuttingPlans_v6')) || {};
+    } catch (e) {
+        console.error("Failed to parse saved plans from localStorage.", e);
+        savedPlans = {};
+    }
+};
+
+const saveCurrentPlan = () => {
+    const body = document.createElement('div');
+    body.innerHTML = `<label for="plan-name-input" class="block text-sm mb-2">Enter a name for the plan:</label>
+                      <input id="plan-name-input" type="text" class="w-full border p-2 rounded-md">`;
+    const input = body.querySelector('#plan-name-input');
+
+    showModal({
+        title: "Save Cutting Plan",
+        body,
+        buttons: [
+            { text: 'Cancel', classes: 'bg-gray-200 px-4 py-2 rounded-md' },
+            { text: 'Save', classes: 'bg-purple-600 text-white px-4 py-2 rounded-md', onClick: () => {
+                const planName = input.value.trim();
+                if (!planName) return;
+                const planData = {
+                    projectData: getProjectData(),
+                    settings: {
+                        kerf: document.getElementById('kerf').value,
+                        minOffcut: document.getElementById('min-offcut').value,
+                        strategy: document.getElementById('stock-strategy').value,
+                        enableTrim: DOMElements.enableTrimCheck.checked,
+                        leftTrim: DOMElements.leftTrimInput.value,
+                        rightTrim: DOMElements.rightTrimInput.value,
+                    },
+                    stocks: [],
+                    parts: []
+                };
+                DOMElements.stockListBody.querySelectorAll('tr').forEach(row => {
+                    const i = row.querySelectorAll('input');
+                    planData.stocks.push({ po: i[0].value, item: i[1].value, qty: i[2].value, length: i[3].value, materialGrade: i[4].value, heatNumber: i[5].value, description: i[6].value, traceability: i[7].value });
+                });
+                DOMElements.partsListBody.querySelectorAll('tr').forEach(row => {
+                    const i = row.querySelectorAll('input, select');
+                    planData.parts.push({ dwgNumber: i[0].value, mark: i[1].value, pos: i[2].value, qty: i[3].value, length: i[4].value, material: i[5].value, priority: i[6].value });
+                });
+                savedPlans[planName] = planData;
+                localStorage.setItem('cuttingPlans_v6', JSON.stringify(savedPlans));
+            }}
+        ]
+    });
+    setTimeout(() => input.focus(), 100);
+};
+
+const loadPlan = (planName) => {
+    const planData = savedPlans[planName];
+    if (!planData || !planData.projectData) return;
+    
+    const pd = planData.projectData;
+    document.getElementById('project-name').value = pd.project || '';
+    document.getElementById('client-name').value = pd.client || '';
+    document.getElementById('equipment-name').value = pd.equipment || '';
+    document.getElementById('prepared-by-name').value = pd.preparedBy || '';
+    document.getElementById('prepared-by-date').value = pd.preparedByDate || '';
+    document.getElementById('received-by-name').value = pd.receivedBy || '';
+    document.getElementById('received-by-date').value = pd.receivedByDate || '';
+    document.getElementById('activity-name').value = pd.workpack || '';
+    document.getElementById('coupon-material').value = pd.coupon || '';
+    document.getElementById('nesting-sheet-number').value = pd.nestingSheet || '';
+    document.getElementById('nesting-sheet-destination').value = pd.destination || '';
+    document.getElementById('report-date').value = pd.date || '';
+
+    if(planData.settings) {
+        document.getElementById('kerf').value = planData.settings.kerf || 5;
+        document.getElementById('min-offcut').value = planData.settings.minOffcut || 500;
+        document.getElementById('stock-strategy').value = planData.settings.strategy || 'best-fit';
+        
+        DOMElements.enableTrimCheck.checked = planData.settings.enableTrim || false;
+        DOMElements.leftTrimInput.value = planData.settings.leftTrim || 0;
+        DOMElements.rightTrimInput.value = planData.settings.rightTrim || 0;
+        DOMElements.trimInputsContainer.classList.toggle('hidden', !DOMElements.enableTrimCheck.checked);
+    }
+    
+    DOMElements.stockListBody.innerHTML = '';
+    DOMElements.partsListBody.innerHTML = '';
+    if (planData.stocks) planData.stocks.forEach(stock => DOMElements.stockListBody.appendChild(createStockRow(stock)));
+    if (planData.parts) planData.parts.forEach(part => DOMElements.partsListBody.appendChild(createPartRow(part)));
+    
+    DOMElements.resultsContainer.classList.add('hidden');
+    lastSolution = null;
+
+    validateAllTables();
+    translateUI();
+};
+
+const showLoadPlanModalHIG = () => {
+    const modal = document.getElementById('load-plan-modal');
+    const modalBody = modal.querySelector('#modal-body');
+    const searchInput = modal.querySelector('#plan-search-input');
+    const t = translations[currentLang];
+    
+    modalBody.innerHTML = '';
+    searchInput.value = '';
+
+    if (!modalBody.querySelector('#no-plans-found')) {
+        modalBody.insertAdjacentHTML('afterbegin', `<p id="no-plans-found" class="text-gray-500 text-center py-8 hidden">${t.noPlansFound}</p>`);
+    }
+    const noPlansFoundEl = modalBody.querySelector('#no-plans-found');
+
+    if (Object.keys(savedPlans).length === 0) {
+        noPlansFoundEl.textContent = t.noPlansSaved;
+        noPlansFoundEl.classList.remove('hidden');
+    } else {
+        noPlansFoundEl.textContent = t.noPlansFound;
+        noPlansFoundEl.classList.add('hidden');
+        
+        Object.entries(savedPlans).forEach(([planName, planData]) => {
+            const plan = planData?.projectData || {};
+            const card = document.createElement('div');
+            card.className = 'group border border-gray-200 rounded-2xl bg-white hover:border-blue-300 transition-colors';
+            card.innerHTML = `
+                <div class="p-4 flex justify-between items-start">
+                    <div class="w-full overflow-hidden">
+                        <div class="text-[15px] font-semibold text-gray-900 group-hover:text-blue-700 transition-colors truncate saved-plan-name" title="${planName}">
+                            ${planName}
+                        </div>
+                        <div class="text-sm text-gray-600 mt-1">
+                            <span class="font-medium text-gray-800">${t.projectLabel}:</span> <span class="saved-project">${plan.project || 'N/A'}</span>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <span class="font-medium text-gray-800">${t.equipmentLabel}:</span> <span class="saved-equipment">${plan.equipment || 'N/A'}</span>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <span class="font-medium text-gray-800">${t.preparedByLabel}:</span> <span class="saved-prepared-by">${plan.preparedBy || 'N/A'}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2 ml-4 shrink-0">
+                        <button class="load-btn text-xs bg-blue-600 text-white font-medium py-1 px-2 rounded-lg hover:bg-blue-700 transition" data-translate="loadButton">Load</button>
+                        <button class="delete-btn text-xs bg-red-500 text-white font-medium py-1 px-2 rounded-lg hover:bg-red-600 transition">Delete</button>
+                    </div>
+                </div>`;
+
+            card.querySelector('.load-btn').addEventListener('click', () => {
+                loadPlan(planName);
+                hideLoadPlanModalHIG();
+            });
+            
+            card.querySelector('.delete-btn').addEventListener('click', () => {
+                if (confirm(`Are you sure you want to delete the plan "${planName}"?`)) {
+                    delete savedPlans[planName];
+                    localStorage.setItem('cuttingPlans_v6', JSON.stringify(savedPlans));
+                    card.remove();
+                    if (modalBody.querySelectorAll('.group').length === 0) {
+                        noPlansFoundEl.textContent = t.noPlansSaved;
+                        noPlansFoundEl.classList.remove('hidden');
+                    }
+                }
+            });
+
+            modalBody.appendChild(card);
+        });
+    }
+    
+    const newSearchInput = searchInput.cloneNode(true);
+    searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+    
+    newSearchInput.addEventListener('input', () => {
+        const searchTerm = newSearchInput.value.toLowerCase();
+        const allCards = modalBody.querySelectorAll('.group');
+        let visibleCount = 0;
+        
+        allCards.forEach(card => {
+            const planName = (card.querySelector('.saved-plan-name')?.textContent || '').toLowerCase();
+            const project = (card.querySelector('.saved-project')?.textContent || '').toLowerCase();
+            const equipment = (card.querySelector('.saved-equipment')?.textContent || '').toLowerCase();
+            
+            const isMatch = planName.includes(searchTerm) || 
+                            project.includes(searchTerm) || 
+                            equipment.includes(searchTerm);
+            
+            card.classList.toggle('hidden', !isMatch);
+            if (isMatch) visibleCount++;
+        });
+        
+        noPlansFoundEl.classList.toggle('hidden', visibleCount > 0 || Object.keys(savedPlans).length === 0);
+    });
+    
+    modal.classList.remove('hidden');
+    newSearchInput.focus();
+};
+
+const hideLoadPlanModalHIG = () => {
+    document.getElementById('load-plan-modal').classList.add('hidden');
+};
+
+
+const translateUI = () => {
+    document.documentElement.lang = currentLang;
+    const t = translations[currentLang] || translations['en'];
+    
+    document.querySelectorAll('[data-translate]').forEach(el => {
+        const key = el.getAttribute('data-translate');
+        if(t[key]) el.textContent = t[key];
+    });
+    
+    document.querySelectorAll('[data-translate-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-translate-placeholder');
+        if(t[key]) el.placeholder = t[key];
+    });
+    
+    document.querySelectorAll('[data-translate-title]').forEach(el => {
+        const key = el.getAttribute('data-translate-title');
+        if(t[key]) el.title = t[key];
+    });
+    
+    document.querySelectorAll('#parts-list tr td select').forEach(select => {
+        if (select.options.length >= 3) {
+            select.options[0].text = '1 (' + (t.priorityHigh || 'High') + ')';
+            select.options[1].text = '2 (' + (t.priorityMedium || 'Medium') + ')';
+            select.options[2].text = '3 (' + (t.priorityLow || 'Low') + ')';
+        }
+    });
+    
+    const noPlansFoundEl = document.getElementById('no-plans-found');
+    if (noPlansFoundEl) {
+        if (Object.keys(savedPlans).length === 0) {
+            noPlansFoundEl.textContent = t.noPlansSaved;
+        } else {
+            noPlansFoundEl.textContent = t.noPlansFound;
+        }
+    }
+};
+
+const exportToExcel = () => {
+    if (!lastSolution) return;
+    const wb = XLSX.utils.book_new();
+    const t = translations[currentLang] || translations['en'];
+
+    lastSolution.stockUsed.forEach((bar, index) => {
+        const totalUsedLength = bar.originalLength - bar.remaining - bar.leftTrim - bar.rightTrim;
+        const utilization = bar.originalLength > 0 ? (totalUsedLength / bar.originalLength) * 100 : 0;
+        
+        const ws_data = [
+            ["Cut Sheet:", index + 1],
+            ["Description:", bar.description], ["Traceability:", bar.traceability], ["Material:", bar.materialGrade], [],
+            ["DWG Number", "Mark", "POS", "Cut Length (mm)"]
+        ];
+        bar.pieces.forEach(p => ws_data.push([p.dwgNumber, p.mark, p.pos, p.length]));
+        ws_data.push([], 
+            ["Utilization:", `${safeToFixed(utilization, 1)}%`], 
+            ["Usable Offcut (mm):", safeToFixed(bar.remaining, 0)],
+            ["Left Trim (mm):", bar.leftTrim || 0],
+            ["Right Trim (mm):", bar.rightTrim || 0]
+        );
+        const ws = XLSX.utils.aoa_to_sheet(ws_data);
+        XLSX.utils.book_append_sheet(wb, ws, `Cut_${index + 1}`);
+    });
+
+    if (lastSolution.generatedOffcuts && lastSolution.generatedOffcuts.length > 0) {
+        const offcuts_data = [
+            [t.thStockLength, t.thMaterialGrade, t.thDescription, t.thTraceability, t.thHeatNumber]
+        ];
+        lastSolution.generatedOffcuts.forEach(offcut => {
+            offcuts_data.push([
+                offcut.length,
+                offcut.materialGrade,
+                offcut.description,
+                offcut.traceability,
+                offcut.heatNumber
+            ]);
+        });
+        const ws_offcuts = XLSX.utils.aoa_to_sheet(offcuts_data);
+        XLSX.utils.book_append_sheet(wb, ws_offcuts, "Offcuts");
+    }
+
+    XLSX.writeFile(wb, "Optimized_Cutting_Plan.xlsx");
+};
+
+
+const handleFileUpload = (event, type) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(worksheet);
+        
+        if (type === 'stock') {
+            DOMElements.stockListBody.innerHTML = '';
+            json.forEach(row => DOMElements.stockListBody.appendChild(createStockRow({ po: row['PO'], item: row['Item'], qty: row['Qty'], length: row['Stock Length (mm)'], materialGrade: row['Material'], heatNumber: row['Heat Number'], description: row['Description'], traceability: row['Traceability'] })));
+        } else {
+            DOMElements.partsListBody.innerHTML = '';
+            json.forEach(row => DOMElements.partsListBody.appendChild(createPartRow({ dwgNumber: row['DWG Number'], mark: row['Mark'], pos: row['POS'], qty: row['Qty'], length: row['Cut Length (mm)'], material: row['Material'], priority: row['Priority'] })));
+        }
+        
+        validateAllTables();
+        translateUI();
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
+};
+
+const handleCouponUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const ws = workbook.Sheets[workbook.SheetNames[0]];
+
+        const getCellValue = (worksheet, address) => {
+            const cell = worksheet[address];
+            return (cell ? cell.v : undefined);
+        };
+        
+        const findValueByLabel = (worksheet, labelText) => {
+            for (const address in worksheet) {
+                if (!worksheet.hasOwnProperty(address)) continue;
+                const cell = worksheet[address];
+                if (!cell || !cell.v || typeof cell.v !== 'string') continue;
+
+                if (cell.v.toLowerCase().trim().startsWith(labelText.toLowerCase())) {
+                    const parts = cell.v.split(':');
+                    if (parts.length > 1 && parts[1].trim() !== '') return parts[1].trim();
+
+                    const col = address.match(/[A-Z]+/)[0];
+                    const row = address.match(/\d+/)[0];
+                    const nextCol = String.fromCharCode(col.charCodeAt(0) + 1);
+                    const rightCell = worksheet[nextCol + row];
+                    if (rightCell && rightCell.v) return rightCell.v;
+                }
+            }
+            return undefined;
+        };
+
+        const get = (addr, label) => getCellValue(ws, addr) || findValueByLabel(ws, label);
+
+        document.getElementById('project-name').value = get('B4', 'project') || '';
+        document.getElementById('client-name').value = get('G4', 'client') || '';
+        document.getElementById('equipment-name').value = get('M4', 'equipment') || '';
+        document.getElementById('activity-name').value = get('Q4', 'workpack') || '';
+        document.getElementById('coupon-material').value = get('V1', 'material coupon') || '';
+        document.getElementById('nesting-sheet-destination').value = get('V2', 'destination') || '';
+        document.getElementById('prepared-by-name').value = findValueByLabel(ws, 'prepared by') || '';
+
+        let date = getCellValue(ws, 'V3');
+        if (typeof date === 'number') {
+            const jsDate = XLSX.SSF.parse_date_code(date);
+            document.getElementById('report-date').value = `${jsDate.y}-${String(jsDate.m).padStart(2, '0')}-${String(jsDate.d).padStart(2, '0')}`;
+        } else if (typeof date === 'string') {
+            const parts = date.match(/(\d+)/g);
+            if (parts && parts.length === 3) {
+                const [d, m, y] = parts;
+                document.getElementById('report-date').value = `${y.length === 2 ? '20' + y : y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            }
+        }
+
+        const dataRows = XLSX.utils.sheet_to_json(ws, { header: 1, range: 5 }); 
+        DOMElements.stockListBody.innerHTML = ''; 
+        
+        dataRows.forEach(row => {
+            if (row.length > 0 && row[8]) {
+                const stockItem = {
+                    po: row[16] || '', item: row[17] || '', qty: row[1] || 1,
+                    length: row[8] || '', materialGrade: row[13] || '', heatNumber: row[19] || '',
+                    description: row[3] || '', traceability: row[5] || '',
+                };
+                DOMElements.stockListBody.appendChild(createStockRow(stockItem));
+            }
+        });
+        
+        validateAllTables();
+        translateUI();
+    };
+    reader.readAsArrayBuffer(file);
+    event.target.value = '';
+};
+
+
+const generateLabels = (pieces, projectData) => {
+    const t = translations[currentLang];
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    let labelsContent = `
+        <!DOCTYPE html><html lang="${currentLang}"><head><title>${t.labelTitle}</title>
+        <style>
+            body { font-family: 'Inter', sans-serif; margin: 0; }
+            .label-page-A4 { width: 21cm; height: 29.7cm; padding: 1cm; box-sizing: border-box; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 1.5cm 1cm; }
+            .label { border: 1px solid #000; padding: 0.5cm; width: 8cm; height: 6cm; display: flex; flex-direction: column; justify-content: space-between; font-size: 10pt; box-sizing: border-box; border-radius: 5px; }
+            .label h3 { font-size: 12pt; font-weight: bold; margin-bottom: 0.2cm; }
+            .label p { margin: 0; line-height: 1.3; }
+            @media print { @page { size: A4 portrait; margin: 0; } }
+        </style></head><body><div class="label-page-A4">`;
+
+    pieces.forEach((piece) => {
+        labelsContent += `<div class="label">
+            <div>
+                <h3>${t.labelTitle}</h3>
+                <p><strong>${t.projectLabel}:</strong> ${projectData.project}</p>
+                <p><strong>${t.thDwgNumber}:</strong> ${piece.dwgNumber}</p>
+                <p><strong>${t.thMark}:</strong> ${piece.mark}</p>
+                <p><strong>${t.thPOS}:</strong> ${piece.pos}</p>
+                <p><strong>${t.thMaterial}:</strong> ${piece.material}</p>
+                <p><strong>${t.thCutLength}:</strong> ${piece.length} mm</p>
+                <p><strong>${t.cutSheetTitle}:</strong> ${projectData.cutSheetId}</p>
+            </div>
+            <div style="text-align: right; font-size: 8pt; color: #555;"><p>Generated on: ${projectData.date}</p></div>
+        </div>`;
+    });
+    
+    labelsContent += `</div></body></html>`;
+    printWindow.document.write(labelsContent);
+    printWindow.document.close();
+    printWindow.onload = () => { printWindow.focus(); printWindow.print(); };
+};
+
+const printReport = (type) => {
+    if (!lastSolution) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const t = translations[currentLang];
+    const currentFontSize = labelFontSize;
+    const projectData = getProjectData();
+    const isMonochrome = isPrintMonochrome;
+    const includeSignatures = document.getElementById('include-signatures').checked;
+
+    const formatDate = (dateString) => {
+        if (!dateString) return new Date().toLocaleDateString(currentLang.replace('_', '-'));
+        const [year, month, day] = dateString.split('-');
+        if (!year || !month || !day) return 'N/A';
+        return `${day}/${month}/${year}`;
+    };
+
+    let reportContent = `<!DOCTYPE html><html lang="${currentLang}"><head><meta charset="UTF-8"><title>${t.printReportTitle}</title>`;
+    let styles = ``;
+
+    if (type === 'visual') {
+        styles = `
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #ffffff; color: #1d1d1f; font-size: 10pt; line-height: 1.4; -webkit-font-smoothing: antialiased; }
+            @page { margin: 12mm 10mm; }
+            .page { width: 100%; height: 100%; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e5e5e7; }
+            .logo-section { display: flex; align-items: center; gap: 12px; }
+            .logo { width: 40px; height: 48px; }
+            .logo img { width: 100%; height: 100%; object-fit: contain; }
+            .company-info h1 { font-size: 14pt; font-weight: 600; color: #1d1d1f; letter-spacing: -0.3px; }
+            .company-info p { font-size: 9pt; color: #86868b; font-weight: 400; }
+            .doc-title { text-align: right; }
+            .doc-title h2 { font-size: 12pt; font-weight: 600; color: #1d1d1f; margin-bottom: 2px; }
+            .doc-title .date { font-size: 9pt; color: #86868b; }
+            .project-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px 12px; margin-bottom: 12px; padding: 8px 10px; background: #f5f5f7; border-radius: 10px; }
+            .info-item { font-size: 8.5pt; }
+            .info-item label { display: block; color: #86868b; font-weight: 500; margin-bottom: 2px; text-transform: uppercase; font-size: 7pt; letter-spacing: 0.5px; }
+            .info-item span { display: block; color: #1d1d1f; font-weight: 600; font-size: 8.5pt; }
+            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin-bottom: 12px; }
+            .stat-card { padding: 8px; border-radius: 8px; text-align: center; }
+            .stat-card.blue { background: linear-gradient(135deg, #e8f4fd 0%, #d6ecfc 100%); }
+            .stat-card.green { background: linear-gradient(135deg, #e7f7ef 0%, #d3f1e3 100%); }
+            .stat-card.orange { background: linear-gradient(135deg, #fff4e6 0%, #ffe8cc 100%); }
+            .stat-card.purple { background: linear-gradient(135deg, #f3ebff 0%, #e8deff 100%); }
+            .stat-card label { display: block; font-size: 7pt; color: #86868b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+            .stat-card .value { font-size: 14pt; font-weight: 700; color: #1d1d1f; line-height: 1; }
+            .cut-sheet { margin-bottom: 16px; border: 1px solid #e5e5e7; border-radius: 12px; overflow: hidden; background: white; page-break-inside: avoid; }
+            .sheet-header { padding: 12px 14px; background: linear-gradient(to bottom, #fafafa 0%, #f5f5f7 100%); border-bottom: 1px solid #e5e5e7; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+            .sheet-title h3 { font-size: 11pt; font-weight: 600; color: #1d1d1f; margin-bottom: 2px; }
+            .sheet-title p { font-size: 8.5pt; color: #86868b; }
+            .sheet-meta { text-align: right; font-size: 7.5pt; color: #86868b; line-height: 1.6; }
+            .sheet-meta strong { color: #1d1d1f; font-weight: 600; }
+            .diagram-section { padding: 14px; }
+            .bar-label { font-size: 8pt; color: #86868b; margin-bottom: 8px; font-weight: 500; }
+            .stock-bar { height: 44px; background: #f5f5f7; border-radius: 8px; position: relative; overflow: hidden; border: 1px solid #e5e5e7; }
+            .piece { position: absolute; flex-direction: column; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.2; color: white; font-weight: 600; font-size: ${currentFontSize}pt; border-right: 1px solid rgba(255,255,255,0.3); }
+			.piece-caption { font-weight: 700; }
+			.piece-length { font-size: 0.8em; opacity: 0.9; font-weight: 400; }
+            .piece-offcut { background: repeating-linear-gradient(45deg, #e5e5e7, #e5e5e7 8px, #d1d1d6 8px, #d1d1d6 16px); color: #86868b; font-weight: 600; }
+            .piece-kerf { background: #999; }
+            .piece-trim { background: repeating-linear-gradient(45deg, #fecaca, #fecaca 8px, #fee2e2 8px, #fee2e2 16px); color: #991b1b; font-weight: 600; font-size: 0.8em; }
+            .cut-list { padding: 0 14px 14px 14px; }
+            .cut-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 8.5pt; }
+            .cut-table thead th { background: #f5f5f7; padding: 8px 10px; text-align: left; font-weight: 600; color: #86868b; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e5e5e7; }
+            .cut-table thead th:first-child { border-top-left-radius: 6px; }
+            .cut-table thead th:last-child { border-top-right-radius: 6px; }
+            .cut-table tbody tr { border-bottom: 1px solid #f5f5f7; }
+            .cut-table tbody tr:last-child { border-bottom: none; }
+            .cut-table tbody td { padding: 2px 10px; color: #1d1d1f; }
+            .sheet-footer { padding: 10px 14px; background: #fafafa; border-top: 1px solid #e5e5e7; display: flex; justify-content: space-between; align-items: center; font-size: 9pt; }
+            .sheet-footer .util { font-weight: 600; color: #1d1d1f; }
+            .sheet-footer .util-value { color: #34c759; font-weight: 700; }
+            .sheet-footer .offcut-value { color: #ff9500; font-weight: 700; }
+            .signatures { margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e5e7; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+            .signature-box { text-align: left; }
+            .signature-line { border-bottom: 1px solid #1d1d1f; height: 40px; margin-bottom: 8px; }
+            .signature-box p { font-size: 8.5pt; color: #1d1d1f; margin-bottom: 2px; }
+            .signature-box strong { font-weight: 600; }
+            .signature-box .role { font-size: 7.5pt; color: #86868b; margin-top: 4px; }
+            .monochrome .piece { background: #ffffff !important; color: #1d1d1f !important; border: 1px solid #1d1d1f !important; box-sizing: border-box; }
+            .monochrome .piece-offcut { background: repeating-linear-gradient(135deg, #ffffff 0px, #ffffff 5px, #e0e0e0 5px, #e0e0e0 6px) !important; color: #1d1d1f !important; border: 1px solid #1d1d1f !important; box-sizing: border-box; }
+            .monochrome .piece-trim { background: repeating-linear-gradient(135deg, #ffffff 0px, #ffffff 5px, #e0e0e0 5px, #e0e0e0 6px) !important; color: #1d1d1f !important; border: 1px solid #1d1d1f !important; box-sizing: border-box; }
+            .monochrome .stat-card { background: #f0f0f0 !important; border: 1px solid #ccc; }
+            .monochrome .stat-card .value, .monochrome .sheet-footer .util-value, .monochrome .sheet-footer .offcut-value { color: #1d1d1f !important; }
+            .monochrome .project-info { background: #f0f0f0 !important; }
+            .monochrome .sheet-header { background: #f5f5f7 !important; }
+            @media print { * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }
+        `;
+        reportContent += `<style>${styles}</style></head><body class="${isMonochrome ? 'monochrome' : ''}"><div class="page">`;
+
+        reportContent += `
+            <div class="header">
+                <div class="logo-section">
+                    <div class="logo"><img src="https://i.ibb.co/wZZQrZW0/Saipem-logo-300px.png" alt="Saipem"></div>
+                    <div class="company-info">
+                        <h1>Saipem do Brasil</h1>
+                        <p>${projectData.nestingSheet || 'N/A'}</p>
+                    </div>
+                </div>
+                <div class="doc-title">
+                    <h2>${t.printReportTitle}</h2>
+                    <p class="date">${formatDate(projectData.date)}</p>
+                </div>
+            </div>`;
+        
+        reportContent += `
+            <div class="project-info">
+                <div class="info-item"><label>${t.projectLabel}</label><span>${projectData.project || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.clientLabel}</label><span>${projectData.client || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.equipmentLabel}</label><span>${projectData.equipment || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.workpackLabel}</label><span>${projectData.workpack || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.couponLabel}</label><span>${projectData.coupon || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.bestAlgorithm}</label><span>${lastSolution.algorithm || 'N/A'}</span></div>
+            </div>`;
+
+        const totalStockLength = lastSolution.totalStockLength;
+        const totalRemaining = lastSolution.totalRemaining;
+        const totalTrims = lastSolution.totalTrims;
+        const totalUsedLength = totalStockLength - totalRemaining - totalTrims;
+        const overallUtilization = totalStockLength > 0 ? (totalUsedLength / totalStockLength) * 100 : 0;
+        
+        reportContent += `
+            <div class="stats-grid">
+                <div class="stat-card blue"><label>${t.totalUtilizationLabel}</label><div class="value">${safeToFixed(overallUtilization, 1)}%</div></div>
+                <div class="stat-card green"><label>${t.barsUsedLabel}</label><div class="value">${lastSolution.stockUsed.length}</div></div>
+                <div class="stat-card orange"><label>${t.partsPlacedLabel}</label><div class="value">${lastSolution.allParts.length - lastSolution.unplacedParts.length}/${lastSolution.allParts.length}</div></div>
+                <div class="stat-card purple"><label>${t.totalOffcutLabel}</label><div class="value">${safeToFixed(totalRemaining/1000, 1)}m</div></div>
+            </div>`;
+
+        lastSolution.stockUsed.forEach((bar, index) => {
+            const leftTrim = bar.leftTrim || 0;
+            const rightTrim = bar.rightTrim || 0;
+            const leftTrimWidth = leftTrim > 0 ? (leftTrim / bar.originalLength) * 100 : 0;
+            const rightTrimWidth = rightTrim > 0 ? (rightTrim / bar.originalLength) * 100 : 0;
+            
+            const barUsedLength = bar.originalLength - bar.remaining - leftTrim - rightTrim;
+            const utilization = bar.originalLength > 0 ? (barUsedLength / bar.originalLength) * 100 : 0;
+            const layoutId = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[index % 26] + (Math.floor(index/26) > 0 ? Math.floor(index/26) : '');
+
+
+            reportContent += `
+            <div class="cut-sheet">
+                <div class="sheet-header">
+                    <div class="sheet-title">
+                        <h3>${t.cutSheetTitle} ${layoutId}</h3>
+                        <p>${bar.description || 'N/A'}</p>
+                    </div>
+                    <div class="sheet-meta">
+                        <div><strong>PO:</strong> ${bar.po || 'N/A'} / <strong>Item:</strong> ${bar.item || 'N/A'}</div>
+                        <div><strong>${t.thMaterialGrade}:</strong> ${bar.materialGrade || 'N/A'} / <strong>Heat:</strong> ${bar.heatNumber || 'N/A'}</div>
+                        <div><strong>${t.thTraceability}:</strong> ${bar.traceability || 'N/A'}</div>
+                    </div>
+                </div>
+                <div class="diagram-section">
+                    <div class="bar-label">${t.barLabel} ${t.thStockLength}: ${bar.originalLength}mm</div>
+                    <div class="stock-bar">`;
+            
+            let currentPos = leftTrimWidth;
+            
+            if (leftTrimWidth > 0) {
+                reportContent += `<div class="piece piece-trim" style="left: 0%; width: ${leftTrimWidth}%;"><span>TRIM ${leftTrim}mm</span></div>`;
+            }
+
+            bar.pieces.forEach((p, i) => {
+                const pieceWidth = (p.length / bar.originalLength) * 100;
+                const kerfWidth = (lastSolution.kerf / bar.originalLength) * 100;
+                const key = `${p.mark || ''}-${p.pos || ''}`;
+                const pieceColor = lastSolution.partColorMap.get(key) || '#a0aec0';
+                const labelHTML = getPieceLabel(p);
+                reportContent += `<div class="piece" style="left: ${currentPos}%; width: ${pieceWidth}%; background: ${pieceColor};">${labelHTML}</div>`;
+                currentPos += pieceWidth;
+                if (i < bar.pieces.length - 1) {
+                    reportContent += `<div class="piece piece-kerf" style="left: ${currentPos}%; width: ${kerfWidth}%;"></div>`;
+                    currentPos += kerfWidth;
+                }
+            });
+
+            if (rightTrimWidth > 0) {
+                reportContent += `<div class="piece piece-trim" style="left: ${100 - rightTrimWidth}%; width: ${rightTrimWidth}%;"><span>TRIM ${rightTrim}mm</span></div>`;
+            }
+
+            if (bar.remaining > 0.001) {
+                const offcutWidth = (bar.remaining / bar.originalLength) * 100;
+                reportContent += `<div class="piece piece-offcut" style="left: ${currentPos}%; width: ${offcutWidth}%;"><span>${t.offcutLabel}</span><span class="piece-length">(${safeToFixed(bar.remaining, 0)}mm)</span></div>`;
+            }
+            reportContent += `</div></div>`;
+
+            reportContent += `
+                <div class="cut-list">
+                    <table class="cut-table">
+                        <thead><tr><th>${t.thSeq}</th><th>${t.thDwgNumber}</th><th>${t.thMark}</th><th>${t.thPOS}</th><th style="text-align: right;">${t.thCutLength}</th></tr></thead>
+                        <tbody>`;
+            bar.pieces.forEach((p, i) => {
+                reportContent += `<tr><td>${i + 1}</td><td>${p.dwgNumber}</td><td>${p.mark}</td><td>${p.pos}</td><td style="text-align: right;">${p.length}</td></tr>`;
+            });
+            reportContent += `</tbody></table></div>`;
+
+            reportContent += `
+                <div class="sheet-footer">
+                    <div class="util">${t.utilizationLabel}: <span class="util-value">${safeToFixed(utilization, 1)}%</span></div>
+                    <div class="util">${t.offcutLabel}: <span class="offcut-value">${safeToFixed(bar.remaining, 0)}mm</span></div>
+                </div>
+            </div>`;
+        });
+
+        if (includeSignatures) {
+            reportContent += `
+                <div class="signatures">
+                    <div class="signature-box">
+                        <div class="signature-line"></div>
+                        <p><strong>${t.nameLabel}:</strong> ${projectData.preparedBy}</p>
+                        <p><strong>${t.dateLabel}:</strong> ${formatDate(projectData.preparedByDate)}</p>
+                        <p class="role">${t.signatureIssuer}</p>
+                    </div>
+                    <div class="signature-box">
+                        <div class="signature-line"></div>
+                        <p><strong>${t.nameLabel}:</strong> ${projectData.receivedBy}</p>
+                        <p><strong>${t.dateLabel}:</strong> ${formatDate(projectData.receivedByDate)}</p>
+                        <p class="role">${t.signatureSupervisor}</p>
+                    </div>
+                </div>`;
+        }
+        
+        reportContent += `</div>`;
+        
+    } else if (type === 'classic') {
+        styles = `
+            @page { margin: 1cm; } 
+            body { font-family: Arial, sans-serif; font-size: 8pt; } 
+            h1 { font-size: 16pt; text-align: center; margin-bottom: 0.5rem;} 
+            .project-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px 12px; margin-bottom: 1rem; padding: 8px 10px; background: #f5f5f7; border-radius: 10px; font-size: 8pt; border: 1px solid #e5e5e7; }
+            .info-item label { display: block; color: #86868b; font-weight: 500; margin-bottom: 2px; text-transform: uppercase; font-size: 7pt; letter-spacing: 0.5px; }
+            .info-item span { display: block; color: #1d1d1f; font-weight: 600; }
+            .report-table { width: 100%; border-collapse: collapse; margin-top: 1rem; } 
+            .report-table th, .report-table td { border: 1px solid #999; padding: 4px; text-align: left; } 
+            .report-table th { background-color: #e2e8f0; font-weight: bold; } 
+            .report-table tbody tr:nth-child(even) { background-color: #f8fafc; }`;
+        reportContent += `<style>${styles}</style></head><body class="bg-white p-6">`;
+        reportContent += `<h1>${t.classicReportTitle}</h1>`;
+        
+        reportContent += `
+            <div class="project-info">
+                <div class="info-item"><label>${t.projectLabel}</label><span>${projectData.project || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.clientLabel}</label><span>${projectData.client || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.equipmentLabel}</label><span>${projectData.equipment || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.workpackLabel}</label><span>${projectData.workpack || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.couponLabel}</label><span>${projectData.coupon || 'N/A'}</span></div>
+                <div class="info-item"><label>${t.dateLabel}</label><span>${formatDate(projectData.date)}</span></div>
+            </div>`;
+            
+        reportContent += `<table class="report-table"><thead><tr>
+            <th>${t.cutSheetTitle}</th><th>${t.thPO}</th><th>${t.thItem}</th><th>${t.thQty}</th><th>${t.thTraceability}</th><th>${t.thDescription}</th>
+            <th>${t.thMaterialGrade}</th><th>${t.thHeatNumber}</th><th>${t.thStockLength}</th><th>${t.thSeq}</th><th>${t.thDwgNumber}</th><th>${t.thMark}</th><th>${t.thPOS}</th><th>${t.thCutLength}</th>
+            </tr></thead><tbody>`;
+        
+        lastSolution.stockUsed.forEach((bar, index) => {
+            const layoutId = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[index];
+            bar.pieces.forEach((p, i) => {
+                reportContent += `<tr>
+                    <td>${layoutId}</td><td>${bar.po || ''}</td><td>${bar.item || ''}</td><td>1</td><td>${p.id.includes('offcut') ? bar.traceability : (bar.traceability || '')}</td>
+                    <td>${bar.description || ''}</td><td>${bar.materialGrade || ''}</td><td>${bar.heatNumber || ''}</td><td>${bar.originalLength}</td>
+                    <td>${i + 1}</td><td>${p.dwgNumber || ''}</td><td>${p.mark || ''}</td><td>${p.pos || ''}</td><td>${p.length}</td>
+                </tr>`;
+            });
+            if (bar.remaining >= lastSolution.minOffcut) {
+                 reportContent += `<tr>
+                    <td>${layoutId}</td><td>${bar.po || ''}</td><td>${bar.item || ''}</td><td>1</td><td>${bar.traceability || ''}_OC</td>
+                    <td>Sobra</td><td>${bar.materialGrade || ''}</td><td>${bar.heatNumber || ''}</td><td>${bar.originalLength}</td>
+                    <td>-</td><td>-</td><td>-</td><td>-</td><td>${safeToFixed(bar.remaining,0)}</td>
+                </tr>`;
+            }
+        });
+        reportContent += `</tbody></table>`;
+        if (includeSignatures) {
+             reportContent += `<div style="margin-top: 2rem; page-break-inside: avoid;"><div style="display: flex; justify-content: space-between; gap: 2rem; margin-top: 1.5rem;"><div style="flex: 1; text-align: center;"><div style="border-bottom: 1px solid #0f172a; margin-top: 2rem; margin-bottom: 0.5rem;"></div><p style="text-align: left;"><strong>${t.nameLabel}:</strong> ${projectData.preparedBy}</p><p style="text-align: left;"><strong>${t.dateLabel}:</strong> ${formatDate(projectData.preparedByDate)}</p><div style="font-size: 8pt; color: #475569;">${t.signatureIssuer}</div></div><div style="flex: 1; text-align: center;"><div style="border-bottom: 1px solid #0f172a; margin-top: 2rem; margin-bottom: 0.5rem;"></div><p style="text-align: left;"><strong>${t.nameLabel}:</strong> ${projectData.receivedBy}</p><p style="text-align: left;"><strong>${t.dateLabel}:</strong> ${formatDate(projectData.receivedByDate)}</p><div style="font-size: 8pt; color: #475569;">${t.signatureSupervisor}</div></div></div></div>`;
+        }
+    } else if (type === 'pro-style') {
+        styles = `
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+            @page { size: A4 landscape; margin: 1cm; } 
+            body { font-family: 'Inter', Arial, sans-serif; font-size: 9pt; color: #1d1d1f; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .page-container { width: 100%; height: 100%; display: flex; flex-direction: column; page-break-after: always; }
+            .page-container:last-of-type { page-break-after: auto; }
+
+            .pro-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #000; padding-bottom: 8px; }
+            .pro-header .logo { width: 120px; }
+            .pro-header .title-block { text-align: right; }
+            .pro-header .title-block h1 { font-size: 18pt; font-weight: 700; margin: 0; }
+            .pro-header .title-block p { font-size: 10pt; color: #555; margin: 0; }
+
+            .pro-info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; font-size: 8.5pt; }
+            .info-block { border: 1px solid #ccc; background: #f9f9f9; border-radius: 8px; padding: 8px; }
+            .info-block h3 { font-size: 10pt; font-weight: 600; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 6px; }
+            .info-item { display: grid; grid-template-columns: 100px 1fr; gap: 2px 8px; }
+            .info-item label { font-weight: 600; color: #333; text-align: right; }
+            .info-item span { font-weight: 400; color: #111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+            .pro-bar-image { margin-top: 12px; border: 1px solid #999; padding: 8px; border-radius: 8px; }
+            .stock-bar { height: 40px; background: #f5f5f7; border-radius: 6px; position: relative; overflow: hidden; border: 1px solid #e5e5e7; }
+            .piece { position: absolute; flex-direction: column; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.1; color: white; font-weight: 600; font-size: ${currentFontSize - 1}pt; border-right: 1px solid rgba(255,255,255,0.4); box-sizing: border-box; overflow: hidden; }
+            .piece-caption { font-weight: 700; }
+            .piece-length { font-size: ${currentFontSize - 2 < 5 ? 5 : currentFontSize - 2}pt; opacity: 0.9; font-weight: 400; }
+            .piece-offcut { background: repeating-linear-gradient(45deg, #e5e5e7, #e5e5e7 8px, #d1d1d6 8px, #d1d1d6 16px); color: #555; font-weight: 600; }
+            .piece-kerf { background: #888; }
+            .piece-trim { background: repeating-linear-gradient(45deg, #fecaca, #fecaca 8px, #fee2e2 8px, #fee2e2 16px); color: #991b1b; font-weight: 600; font-size: 0.8em; }
+
+            .pro-parts-summary { margin-top: 12px; }
+            .pro-parts-summary h3 { font-size: 10pt; font-weight: 600; margin-bottom: 6px; }
+            .parts-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+            .parts-table th, .parts-table td { border: 1px solid #bbb; padding: 4px 6px; text-align: center; }
+            .parts-table th { background-color: #e2e8f0; font-weight: 600; }
+
+            .pro-footer { margin-top: auto; padding-top: 8px; border-top: 1px solid #ccc; display: flex; justify-content: space-between; font-size: 8pt; color: #555; }
+            
+            .monochrome .piece { background: #ffffff !important; color: #1d1d1f !important; border: 1px solid #1d1d1f !important; }
+            .monochrome .piece-offcut { background: repeating-linear-gradient(135deg, #ffffff 0px, #ffffff 5px, #e0e0e0 5px, #e0e0e0 6px) !important; color: #1d1d1f !important; border: 1px solid #1d1d1f !important; }
+            .monochrome .piece-trim { background: repeating-linear-gradient(135deg, #ffffff 0px, #ffffff 5px, #e0e0e0 5px, #e0e0e0 6px) !important; color: #1d1d1f !important; border: 1px solid #1d1d1f !important; }
+        `;
+        reportContent += `<style>${styles}</style></head><body class="${isMonochrome ? 'monochrome' : ''}">`;
+
+        lastSolution.stockUsed.forEach((bar, index) => {
+            const leftTrim = bar.leftTrim || 0;
+            const rightTrim = bar.rightTrim || 0;
+            const leftTrimWidth = leftTrim > 0 ? (leftTrim / bar.originalLength) * 100 : 0;
+            const rightTrimWidth = rightTrim > 0 ? (rightTrim / bar.originalLength) * 100 : 0;
+            
+            const totalUsedLength = bar.originalLength - bar.remaining - leftTrim - rightTrim;
+            const utilization = bar.originalLength > 0 ? (totalUsedLength / bar.originalLength) * 100 : 0;
+            
+            const totalKerf = (bar.pieces.length > 0 ? bar.pieces.length -1 : 0) * lastSolution.kerf;
+            const layoutId = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[index % 26] + (Math.floor(index/26) > 0 ? Math.floor(index/26) : '');
+
+            reportContent += `<div class="page-container">`;
+            
+            reportContent += `
+                <div class="pro-header">
+                    <img src="https://www.saipem.com/themes/custom/saipem_theme/overrides-logo-colored.svg" alt="Saipem Logo" class="logo" />
+                    <div class="title-block">
+                        <h1>${t.reportTitlePro}</h1>
+                        <p>${t.nestingSheetNumberLabel}: ${projectData.nestingSheet || 'N/A'}</p>
+                    </div>
+                </div>`;
+
+            reportContent += `
+                <div class="pro-info-grid">
+                    <div class="info-block">
+                        <h3>${t.projectDataTitle}</h3>
+                        <div class="info-item"><label>${t.projectLabel}:</label><span>${projectData.project || 'N/A'}</span></div>
+                        <div class="info-item"><label>${t.clientLabel}:</label><span>${projectData.client || 'N/A'}</span></div>
+                        <div class="info-item"><label>${t.equipmentLabel}:</label><span>${projectData.equipment || 'N/A'}</span></div>
+                        <div class="info-item"><label>${t.workpackLabel}:</label><span>${projectData.workpack || 'N/A'}</span></div>
+                    </div>
+                    <div class="info-block">
+                        <h3>${t.barInfo}</h3>
+                        <div class="info-item"><label>${t.thDescription}:</label><span>${bar.description || 'N/A'}</span></div>
+                        <div class="info-item"><label>${t.thMaterialGrade}:</label><span>${bar.materialGrade || 'N/A'}</span></div>
+                        <div class="info-item"><label>${t.thHeatNumber}:</label><span>${bar.heatNumber || 'N/A'}</span></div>
+                        <div class="info-item"><label>${t.thTraceability}:</label><span>${bar.traceability || 'N/A'}</span></div>
+                    </div>
+                    <div class="info-block">
+                        <h3>${t.nestStats} (Barra ${layoutId})</h3>
+                        <div class="info-item"><label>${t.barLength}:</label><span>${bar.originalLength} mm</span></div>
+                        <div class="info-item"><label>Compr. Total Usado:</label><span>${safeToFixed(totalUsedLength, 0)} mm</span></div>
+                        <div class="info-item"><label>Kerf Total:</label><span>${totalKerf} mm</span></div>
+                        <div class="info-item"><label>${t.utilizationLabel}:</label><span style="color: #22c55e; font-weight: 600;">${safeToFixed(utilization, 1)}%</span></div>
+                        <div class="info-item"><label>${t.offcutLabel}:</label><span style="color: #f97316; font-weight: 600;">${safeToFixed(bar.remaining, 0)} mm</span></div>
+                    </div>
+                </div>`;
+
+            reportContent += `<div class="pro-bar-image"><div class="stock-bar">`;
+            let currentPos = leftTrimWidth;
+            
+            if (leftTrimWidth > 0) {
+                reportContent += `<div class="piece piece-trim" style="left: 0%; width: ${leftTrimWidth}%;"><span>TRIM ${leftTrim}mm</span></div>`;
+            }
+            
+            bar.pieces.forEach((p, i) => {
+                const pieceWidth = (p.length / bar.originalLength) * 100;
+                const kerfWidth = (lastSolution.kerf / bar.originalLength) * 100;
+                const key = `${p.mark || ''}-${p.pos || ''}`;
+                const pieceColor = lastSolution.partColorMap.get(key) || '#a0aec0';
+                const labelHTML = getPieceLabel(p);
+                reportContent += `<div class="piece" style="left: ${currentPos}%; width: ${pieceWidth}%; background: ${pieceColor};">${labelHTML}</div>`;
+                currentPos += pieceWidth;
+                if (i < bar.pieces.length - 1) {
+                    reportContent += `<div class="piece piece-kerf" style="left: ${currentPos}%; width: ${kerfWidth}%;"></div>`;
+                    currentPos += kerfWidth;
+                }
+            });
+            
+            if (rightTrimWidth > 0) {
+                reportContent += `<div class="piece piece-trim" style="left: ${100 - rightTrimWidth}%; width: ${rightTrimWidth}%;"><span>TRIM ${rightTrim}mm</span></div>`;
+            }
+            
+            if (bar.remaining > 0.001) {
+                const offcutWidth = (bar.remaining / bar.originalLength) * 100;
+                reportContent += `<div class="piece piece-offcut" style="left: ${currentPos}%; width: ${offcutWidth}%;"><span>${t.offcutLabel} (${safeToFixed(bar.remaining, 0)}mm)</span></div>`;
+            }
+            reportContent += `</div></div>`;
+            
+            const groupedPieces = bar.pieces.reduce((acc, p) => {
+                const key = `${p.mark || ''}|${p.pos || ''}|${p.length}|${p.dwgNumber || ''}`;
+                if (!acc[key]) {
+                    acc[key] = { ...p, count: 0 };
+                }
+                acc[key].count++;
+                return acc;
+            }, {});
+
+            reportContent += `
+                <div class="pro-parts-summary">
+                    <h3>Resumo de Peças</h3>
+                    <table class="parts-table">
+                        <thead><tr><th>${t.thQty}</th><th>${t.thMark}</th><th>${t.thPOS}</th><th>${t.cutLength}</th><th>${t.dwgRef}</th></tr></thead>
+                        <tbody>`;
+            Object.values(groupedPieces).forEach(p => {
+                reportContent += `<tr>
+                    <td>${p.count}x</td>
+                    <td>${p.mark || ''}</td>
+                    <td>${p.pos || ''}</td>
+                    <td>${p.length} mm</td>
+                    <td>${p.dwgNumber || ''}</td>
+                </tr>`;
+            });
+            reportContent += `</tbody></table></div>`;
+
+            reportContent += `
+                <div class="pro-footer">
+                    <span>${projectData.preparedBy || 'Saipem'}</span>
+                    <span>${t.dateLabel}: ${formatDate(projectData.date)}</span>
+                    <span>Página ${index + 1} de ${lastSolution.stockUsed.length}</span>
+                </div>`;
+
+            reportContent += `</div>`;
+        });
+    } else if (type === 'simple') {
+        styles = `@page { size: landscape; margin: 0.8cm; } 
+            body { 
+                font-family: Arial, sans-serif; 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+            } 
+            .tg { 
+                border-collapse: collapse; 
+                width: 100%; 
+                font-size: 7pt; 
+                page-break-after: always; 
+            } 
+            .tg:last-of-type { 
+                page-break-after: auto; 
+            } 
+            .tg td, .tg th { 
+                border: 1px solid black; 
+                padding: 2px 4px; 
+            } 
+            .tg th { 
+                font-weight: bold; 
+            } 
+            .tg .tg-lboi { 
+                text-align: left; 
+                vertical-align: middle; 
+            } 
+            .tg .tg-9wq8 { 
+                text-align: center; 
+                vertical-align: middle; 
+            } 
+            .tg .tg-i231 { 
+                background-color: #D9D9D9; 
+                font-weight: bold; 
+                text-align: center; 
+                vertical-align: middle; 
+            } 
+            .tg .tg-uzvj { 
+                font-weight: bold; 
+                text-align: center; 
+                vertical-align: middle; 
+                font-size: 14pt; 
+            } 
+            .tg .tg-g7sd { 
+                font-weight: bold; 
+                text-align: left; 
+                vertical-align: middle; 
+            } 
+            .tg .tg-roi2 { 
+                background-color: #c0c0c0; 
+                text-align: center; 
+                vertical-align: middle; 
+                font-weight: bold; 
+            } 
+            .tg .tg-dvpl { 
+                text-align: right; 
+                vertical-align: middle; 
+                font-weight: bold; 
+            }
+            .tg-simple-diagram-outer { 
+                font-family: Arial, sans-serif; font-size: 10px; color: #333; print-color-adjust: exact !important;
+                border-collapse: collapse; border-spacing: 0; text-align: center; position: relative; height: 40px;
+                background-color: #f5f5f5; border: 1px solid black; margin: 5px 0;
+            }
+            .tg-simple-diagram-piece { 
+                position: absolute; height: 100%; background-color: #f7f7f7; border-right: 1px solid black; 
+                display: flex; flex-direction: column; justify-content: center; align-items: center; 
+                font-size: ${currentFontSize - 3 < 5 ? 5 : currentFontSize - 3}pt;
+                color: black; box-sizing: border-box; overflow: hidden; 
+            }
+            .tg-simple-diagram-piece .pos { 
+                font-weight: bold; 
+                font-size: ${currentFontSize - 2 < 6 ? 6 : currentFontSize - 2}pt;
+            }
+            .tg-simple-diagram-piece .length { 
+                font-size: ${currentFontSize - 3 < 5 ? 5 : currentFontSize - 3}pt;
+            } 
+            .tg-simple-diagram-offcut { position: absolute; height: 100%; background: repeating-linear-gradient(45deg, #d1d5db, #d1d5db 10px, #e5e7eb 10px, #e5e7eb 20px); border-left: 1px solid black; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-weight: bold; }
+            .tg-simple-diagram-trim { position: absolute; height: 100%; background: repeating-linear-gradient(45deg, #fecaca, #fecaca 8px, #fee2e2 8px, #fee2e2 16px); border-right: 1px solid black; border-left: 1px solid black; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-weight: bold; font-size: 8pt; color: #991b1b; }
+            `;
+            
+        reportContent += `<style>${styles}</style></head><body class="bg-white p-6">`;
+        lastSolution.stockUsed.forEach((bar, index) => {
+            const totalNestedLength = bar.pieces.reduce((sum, p) => sum + p.length, 0);
+            const numRows = bar.pieces.length > 0 ? bar.pieces.length : 1;
+            
+            const leftTrim = bar.leftTrim || 0;
+            const rightTrim = bar.rightTrim || 0;
+            const leftTrimWidth = leftTrim > 0 ? (leftTrim / bar.originalLength) * 100 : 0;
+            const rightTrimWidth = rightTrim > 0 ? (rightTrim / bar.originalLength) * 100 : 0;
+            
+            let diagramHTML = `<div class="tg-simple-diagram-outer">`;
+            let currentPosPercent = leftTrimWidth;
+            
+            if (leftTrimWidth > 0) {
+                diagramHTML += `<div class="tg-simple-diagram-trim" style="left: 0%; width: ${leftTrimWidth}%;"><span>TRIM</span></div>`;
+            }
+
+            bar.pieces.forEach((p, i) => {
+                const pieceWidth = (p.length / bar.originalLength) * 100;
+                
+                let simpleLabel = '';
+                if (showSeq) {
+                    simpleLabel = `<span class="pos">${i + 1}</span>`;
+                } else {
+                    if (showMark && p.mark) simpleLabel += `<span class="pos">${p.mark}</span>`;
+                    if (showPos && p.pos) simpleLabel += `<span class="pos" style="${(showMark && p.mark) ? 'font-weight:normal; font-size: 0.9em;' : ''}">${p.pos}</span>`;
+                }
+                if (showLength) {
+                    simpleLabel += `<span class="length">${p.length}</span>`;
+                }
+                
+                diagramHTML += `<div class="tg-simple-diagram-piece" style="left:${currentPosPercent}%; width:${pieceWidth}%;">${simpleLabel}</div>`;
+                currentPosPercent += pieceWidth;
+                if (i < bar.pieces.length - 1) {
+                    currentPosPercent += (lastSolution.kerf / bar.originalLength) * 100;
+                }
+            });
+            
+            if (rightTrimWidth > 0) {
+                diagramHTML += `<div class="tg-simple-diagram-trim" style="left: ${100 - rightTrimWidth}%; width: ${rightTrimWidth}%;"><span>TRIM</span></div>`;
+            }
+            
+            if (bar.remaining > 0.001) {
+                diagramHTML += `<div class="tg-simple-diagram-offcut" style="left:${currentPosPercent}%; width:${(bar.remaining / bar.originalLength) * 100}%;"><span>${t.offcutLabel}</span></div>`;
+            }
+            diagramHTML += '</div>';
+
+            const firstPiece = bar.pieces[0] || {};
+            reportContent += `<table class="tg">
+                <thead>
+                  <tr>
+                    <th class="tg-lboi" rowspan="3" style="width:10%; text-align: center;">
+                      <img src="https://www.saipem.com/themes/custom/saipem_theme/overrides-logo-colored.svg" alt="Logo" style="width:100%; height: auto; object-fit: contain; max-width: 80px;">
+                    </th>
+                    <th class="tg-uzvj" colspan="8" rowspan="3">${t.simpleReportTitle}</th>
+                    <th class="tg-g7sd">${t.nestingSheetNumberLabel}:</th>
+                    <th class="tg-lboi" colspan="3">${projectData.nestingSheet || ''}</th>
+                  </tr>
+                  <tr>
+                    <th class="tg-g7sd">${t.destinationLabel}:</th>
+                    <th class="tg-lboi" colspan="3">${projectData.destination || ''}</th>
+                  </tr>
+                  <tr>
+                    <th class="tg-g7sd">${t.dateLabel}:</th>
+                    <th class="tg-lboi" colspan="3">${formatDate(projectData.date)}</th>
+                  </tr>
+                  <tr>
+                    <td class="tg-g7sd">${t.projectLabel.toUpperCase()}:</td>
+                    <td class="tg-lboi" colspan="2">${projectData.project || ''}</td>
+                    <td class="tg-g7sd">${t.clientLabel.toUpperCase()}:</td>
+                    <td class="tg-lboi" colspan="2">${projectData.client || ''}</td>
+                    <td class="tg-g7sd" colspan="2">${t.equipmentLabel.toUpperCase()}:</td>
+                    <td class="tg-lboi" colspan="5">${projectData.equipment || ''}</td>
+                  </tr>
+                  <tr>
+                    <td class="tg-g7sd">${t.workpackLabel.toUpperCase()}:</td>
+                    <td class="tg-lboi" colspan="5">${projectData.workpack || ''}</td>
+                    <td class="tg-g7sd" colspan="2">${t.couponLabel.toUpperCase()}:</td>
+                    <td class="tg-lboi" colspan="5">${projectData.coupon || ''}</td>
+                  </tr>
+                  <tr>
+                    <td class="tg-roi2" colspan="8">AVAILABLE STOCK</td>
+                    <td class="tg-roi2" colspan="5">OPTIMIZED NESTING FOR CUTTING</td>
+                  </tr>
+                  <tr>
+                    <td class="tg-i231">Bar No</td>
+                    <td class="tg-i231">${t.thPO}/${t.thItem}</td>
+                    <td class="tg-i231">${t.thTraceability.toUpperCase()}</td>
+                    <td class="tg-i231">${t.thDescription.toUpperCase()}</td>
+                    <td class="tg-i231">${t.thMaterial.toUpperCase()}</td>
+                    <td class="tg-i231">${t.thHeatNumber.toUpperCase()}</td>
+                    <td class="tg-i231">STOCK LENGHT</td>
+                    <td class="tg-i231">REMARKS</td>
+                    <td class="tg-i231">DRAWING REF.</td>
+                    <td class="tg-i231">${t.thSeq}.</td>
+                    <td class="tg-i231">${t.thMark.toUpperCase()}</td>
+                    <td class="tg-i231">${t.thPOS.toUpperCase()}</td>
+                    <td class="tg-i231">CUT LENGHT (mm)</td>
+                  </tr>
+                </thead>
+                <tbody>`;
+            reportContent += `<tr>
+                <td class="tg-9wq8" rowspan="${numRows}">${index + 1}</td>
+                <td class="tg-9wq8" rowspan="${numRows}">${bar.po||''}/${bar.item||''}</td>
+                <td class="tg-9wq8" rowspan="${numRows}">${bar.traceability||''}</td>
+                <td class="tg-9wq8" rowspan="${numRows}">${bar.description||''}</td>
+                <td class="tg-9wq8" rowspan="${numRows}">${bar.materialGrade||''}</td>
+                <td class="tg-9wq8" rowspan="${numRows}">${bar.heatNumber||''}</td>
+                <td class="tg-9wq8" rowspan="${numRows}">${bar.originalLength||''}</td>
+                <td class="tg-9wq8" rowspan="${numRows}">&nbsp;</td>
+                <td class="tg-9wq8">${firstPiece.dwgNumber||'&nbsp;'}</td>
+                <td class="tg-9wq8">1</td>
+                <td class="tg-9wq8">${firstPiece.mark||'&nbsp;'}</td>
+                <td class="tg-9wq8">${firstPiece.pos||'&nbsp;'}</td>
+                <td class="tg-9wq8">${firstPiece.length||'&nbsp;'}</td>
+              </tr>`;
+            reportContent += bar.pieces.slice(1).map((p, i) => `<tr>
+                <td class="tg-9wq8">${p.dwgNumber||''}</td>
+                <td class="tg-9wq8">${i + 2}</td>
+                <td class="tg-9wq8">${p.mark||''}</td>
+                <td class="tg-9wq8">${p.pos||''}</td>
+                <td class="tg-9wq8">${p.length||''}</td>
+              </tr>`).join('');
+            reportContent += `</tbody>
+                <tfoot>
+                  <tr>
+                    <td class="tg-9wq8" colspan="8" rowspan="2" style="padding: 22px;">${diagramHTML}</td>
+                    <td class="tg-dvpl">TOTAL NESTED (mm)</td>
+                    <td class="tg-9wq8" colspan="4" style="text-align:center;">${totalNestedLength}</td>
+                  </tr>
+                  <tr>
+                    <td class="tg-dvpl">EXPECTED RETURN/SCRAP (mm)</td>
+                    <td class="tg-9wq8" colspan="4" style="text-align:center;">${bar.remaining.toFixed(0)}</td>
+                  </tr>`;
+            
+            if (includeSignatures) {
+                reportContent += `<tr><td colspan="13" style="padding: 22px 95px;">
+                    <div style="display: flex; justify-content: space-between; gap: 5rem;">
+                        <div style="flex: 1; text-align: center;">
+                            <div style="border-bottom: 1px solid #000; margin-top: 1.5rem; margin-bottom: 0.5rem;"></div>
+                            <p style="text-align: left; margin:4px; font-size: 9pt;"><strong>${t.nameLabel}:</strong> ${projectData.preparedBy}</p>
+                            <p style="text-align: left; margin:4px; font-size: 9pt;"><strong>${t.dateLabel}:</strong> ${formatDate(projectData.preparedByDate)}</p>
+                            <div style="font-size: 9pt; color: #475569;">${t.signatureIssuer}</div>
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <div style="border-bottom: 1px solid #000; margin-top: 1.5rem; margin-bottom: 0.5rem;"></div>
+                            <p style="text-align: left; margin:4px; font-size: 9pt;"><strong>${t.nameLabel}:</strong> ${projectData.receivedBy}</p>
+                            <p style="text-align: left; margin:4px; font-size: 9pt;"><strong>${t.dateLabel}:</strong> ${formatDate(projectData.receivedByDate)}</p>
+                            <div style="font-size: 9pt; color: #475569;">${t.signatureSupervisor}</div>
+                        </div>
+                    </div>
+                </td></tr>`;
+            }
+            reportContent += `</tfoot></table>`;
+        });
+    }
+
+    reportContent += '</body></html>';
+    printWindow.document.write(reportContent);
+    printWindow.document.close();
+    printWindow.onload = () => { printWindow.focus(); printWindow.print(); };
+};
+
+function handleTableActions(e) {
+    const target = e.target.closest('button');
+    if (!target) return;
+    const originalRow = target.closest('tr');
+
+    if (target.classList.contains('remove-row')) {
+        originalRow.remove();
+        validateAllTables();
+    } else if (target.classList.contains('copy-row')) {
+        const inputs = originalRow.querySelectorAll('input');
+        const selects = originalRow.querySelectorAll('select');
+        let newRow;
+        if (originalRow.parentElement.id === 'stock-list') {
+            newRow = createStockRow({ po: inputs[0].value, item: inputs[1].value, qty: inputs[2].value, length: inputs[3].value, materialGrade: inputs[4].value, heatNumber: inputs[5].value, description: inputs[6].value, traceability: inputs[7].value });
+        } else {
+            newRow = createPartRow({ dwgNumber: inputs[0].value, mark: inputs[1].value, pos: inputs[2].value, qty: inputs[3].value, length: inputs[4].value, material: inputs[5].value, priority: selects[0].value });
+        }
+        originalRow.insertAdjacentElement('afterend', newRow);
+        translateUI();
+    }
+}
+
+function handlePaste(e, createRowFunc, tbody) {
+    const pasteData = (e.clipboardData || window.clipboardData).getData('text');
+    
+    // Se não for texto de tabela (do Excel, por exemplo), não faz nada e deixa o navegador colar.
+    if (!pasteData.includes('\t') && !pasteData.includes('\n')) {
+        return;
+    }
+
+    e.preventDefault(); // Só previne o padrão se for colar em tabela.
+    
+    const pastedRows = pasteData.split(/\r?\n/).filter(row => row.trim() !== '');
+    const startInput = document.activeElement;
+
+    if (!startInput || !tbody.contains(startInput) || !startInput.matches('input, select')) return; 
+
+    const startRow = startInput.closest('tr');
+    const startCellIndex = Array.from(startRow.cells).indexOf(startInput.closest('td'));
+    let currentRow = startRow;
+
+    pastedRows.forEach((rowStr, rowIndex) => {
+        if (!currentRow) return;
+        const pastedCells = rowStr.split('\t');
+        pastedCells.forEach((cellStr, cellIndex) => {
+            const targetCellIndex = startCellIndex + cellIndex;
+            const targetInputs = currentRow.querySelectorAll('input, select');
+            if (targetInputs[targetCellIndex]) {
+                targetInputs[targetCellIndex].value = cellStr.trim();
+                targetInputs[targetCellIndex].dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+
+        if (rowIndex < pastedRows.length - 1) {
+            let nextRow = currentRow.nextElementSibling;
+            if (!nextRow) {
+                nextRow = createRowFunc();
+                tbody.appendChild(nextRow);
+            }
+            currentRow = nextRow;
+        }
+    });
+    validateAllTables();
+}
+
+const clearAllData = () => {
+    const t = translations[currentLang];
+    const body = document.createElement('p');
+    body.textContent = t.confirmClear;
+
+    showModal({
+        title: t.clearAll,
+        body: body,
+        buttons: [
+            { text: t.cancel, classes: 'bg-gray-200 px-4 py-2 rounded-md' },
+            { 
+                text: t.yesClear, 
+                classes: 'bg-red-600 text-white px-4 py-2 rounded-md', 
+                onClick: () => {
+                    document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"]').forEach(input => {
+                        if(!['kerf', 'min-offcut', 'report-date', 'prepared-by-date', 'received-by-date', 'left-trim', 'right-trim'].includes(input.id)) {
+                           input.value = '';
+                        }
+                    });
+                    
+                    DOMElements.leftTrimInput.value = 0;
+                    DOMElements.rightTrimInput.value = 0;
+                    DOMElements.enableTrimCheck.checked = false;
+                    DOMElements.trimInputsContainer.classList.add('hidden');
+
+                    DOMElements.stockListBody.innerHTML = '';
+                    DOMElements.stockListBody.appendChild(createStockRow());
+                    DOMElements.partsListBody.innerHTML = '';
+                    DOMElements.partsListBody.appendChild(createPartRow());
+                    
+                    DOMElements.resultsContainer.classList.add('hidden');
+                    DOMElements.offcutsContainer.innerHTML = '';
+                    lastSolution = null;
+                    offcutsStock = [];
+
+                    const today = new Date();
+                    DOMElements.reportDateInput.valueAsDate = today;
+                    DOMElements.preparedByDateInput.valueAsDate = today;
+                    DOMElements.receivedByDateInput.valueAsDate = today;
+
+                    validateAllTables();
+                    translateUI();
+                }
+            }
+        ]
+    });
+};
+
+const exportPlans = () => {
+    const dataStr = JSON.stringify(savedPlans, null, 2);
+    const dataBlob = new Blob([dataStr], {type: "application/json"});
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'cutting-plans-backup.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
+
+const importPlans = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    const t = translations[currentLang];
+
+    reader.onload = (e) => {
+        try {
+            const importedPlans = JSON.parse(e.target.result);
+            if(typeof importedPlans === 'object' && importedPlans !== null) {
+                savedPlans = importedPlans;
+                localStorage.setItem('cuttingPlans_v6', JSON.stringify(savedPlans));
+                showToast(t.plansImported, 'success');
+            } else {
+                throw new Error("Invalid format");
+            }
+        } catch (error) {
+            showToast(t.plansImportError, 'error');
+            console.error(error);
+        }
+    };
+    
+    reader.readAsText(file);
+    event.target.value = '';
+};
+
+const init = () => {
+    DOMElements.addStockBtn.addEventListener('click', () => {
+        DOMElements.stockListBody.appendChild(createStockRow());
+        translateUI();
+    });
+    DOMElements.addPartBtn.addEventListener('click', () => {
+        DOMElements.partsListBody.appendChild(createPartRow());
+        translateUI();
+    });
+    
+    DOMElements.stockListBody.addEventListener('click', handleTableActions);
+    DOMElements.partsListBody.addEventListener('click', handleTableActions);
+    
+    DOMElements.stockListBody.addEventListener('paste', (e) => handlePaste(e, createStockRow, DOMElements.stockListBody));
+    DOMElements.partsListBody.addEventListener('paste', (e) => handlePaste(e, createPartRow, DOMElements.partsListBody));
+
+    document.querySelector('.max-w-7xl').addEventListener('input', (e) => {
+        if (e.target.matches('#stock-list input, #parts-list input')) {
+            validateAllTables();
+        }
+    });
+    
+    DOMElements.calculateBtn.addEventListener('click', async () => {
+        DOMElements.calculateBtnText.classList.add('hidden');
+        DOMElements.calculateBtnSpinner.classList.remove('hidden');
+        DOMElements.calculateBtn.disabled = true;
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        try {
+            const solution = await runAllocations();
+            if (solution) {
+                lastSolution = solution;
+                renderSolution(lastSolution);
+                showToast(translations[currentLang].optimizeSuccess, 'success');
+            }
+        } catch (error) {
+            showToast(translations[currentLang].optimizeError, 'error');
+        } finally {
+            DOMElements.calculateBtnText.classList.remove('hidden');
+            DOMElements.calculateBtnSpinner.classList.add('hidden');
+            validateAllTables();
+        }
+    });
+
+    DOMElements.languageSelector.addEventListener('change', (e) => {
+        currentLang = e.target.value;
+        translateUI();
+        if (lastSolution) renderSolution(lastSolution);
+    });
+    
+    DOMElements.savePlanBtn.addEventListener('click', saveCurrentPlan);
+    DOMElements.loadPlanBtn.addEventListener('click', showLoadPlanModalHIG);
+    document.getElementById('closeModal').addEventListener('click', hideLoadPlanModalHIG);
+    document.getElementById('footerCloseModal').addEventListener('click', hideLoadPlanModalHIG);
+
+    DOMElements.toggleLabelSeqBtn.addEventListener('click', () => {
+        showSeq = !showSeq;
+        DOMElements.toggleLabelSeqBtn.classList.toggle('active', showSeq);
+        if(showSeq) {
+            showMark = false;
+            showPos = false;
+            DOMElements.toggleLabelMarkBtn.classList.remove('active');
+            DOMElements.toggleLabelPosBtn.classList.remove('active');
+        }
+        updatePieceLabels();
+    });
+    DOMElements.toggleLabelMarkBtn.addEventListener('click', () => {
+        showMark = !showMark;
+        DOMElements.toggleLabelMarkBtn.classList.toggle('active', showMark);
+        if(showMark) {
+            showSeq = false;
+            DOMElements.toggleLabelSeqBtn.classList.remove('active');
+        }
+        updatePieceLabels();
+    });
+    DOMElements.toggleLabelPosBtn.addEventListener('click', () => {
+        showPos = !showPos;
+        DOMElements.toggleLabelPosBtn.classList.toggle('active', showPos);
+        if(showPos) {
+            showSeq = false;
+            DOMElements.toggleLabelSeqBtn.classList.remove('active');
+        }
+        updatePieceLabels();
+    });
+    DOMElements.toggleLabelLengthBtn.addEventListener('click', () => {
+        const isActive = DOMElements.toggleLabelLengthBtn.classList.toggle('active');
+        showLength = isActive;
+        DOMElements.body.classList.toggle('stacked-labels', isActive);
+        updatePieceLabels();
+    });
+    
+    DOMElements.labelFontSizeSlider.addEventListener('input', (e) => {
+        labelFontSize = e.target.value;
+        DOMElements.labelFontSizeValue.textContent = `${labelFontSize}pt`;
+        DOMElements.resultsVisual.style.setProperty('--label-font-size', `${labelFontSize}pt`);
+    });
+    
+    DOMElements.toggleColorsBtn.addEventListener('click', () => {
+        isPrintMonochrome = !isPrintMonochrome;
+        DOMElements.toggleColorsBtn.classList.toggle('active', isPrintMonochrome);
+    });
+
+    DOMElements.printBtn.addEventListener('click', () => printReport('visual'));
+    DOMElements.printClassicBtn.addEventListener('click', () => printReport('classic'));
+    DOMElements.printSimpleBtn.addEventListener('click', () => printReport('simple'));
+    DOMElements.printProBtn.addEventListener('click', () => printReport('pro-style'));
+
+    DOMElements.exportExcelBtn.addEventListener('click', exportToExcel);
+
+    DOMElements.uploadStockBtn.addEventListener('click', () => DOMElements.stockFileInput.click());
+    DOMElements.stockFileInput.addEventListener('change', (e) => handleFileUpload(e, 'stock'));
+    DOMElements.uploadPartsBtn.addEventListener('click', () => DOMElements.partsFileInput.click());
+    DOMElements.partsFileInput.addEventListener('change', (e) => handleFileUpload(e, 'parts'));
+    DOMElements.importCouponBtn.addEventListener('click', () => DOMElements.couponFileInput.click());
+    DOMElements.couponFileInput.addEventListener('change', handleCouponUpload);
+    DOMElements.clearAllBtn.addEventListener('click', clearAllData);
+    DOMElements.exportPlansBtn.addEventListener('click', exportPlans);
+    DOMElements.importPlansBtn.addEventListener('click', () => DOMElements.importPlansInput.click());
+    DOMElements.importPlansInput.addEventListener('change', importPlans);
+    
+    DOMElements.enableTrimCheck.addEventListener('change', (e) => {
+        DOMElements.trimInputsContainer.classList.toggle('hidden', !e.target.checked);
+    });
+
+
+    const today = new Date();
+    DOMElements.reportDateInput.valueAsDate = today;
+    DOMElements.preparedByDateInput.valueAsDate = today;
+    DOMElements.receivedByDateInput.valueAsDate = today;
+
+    loadPlansFromStorage();
+    
+    if(DOMElements.stockListBody.children.length === 0)
+        DOMElements.stockListBody.appendChild(createStockRow({po: 'PO123', item: 'IT456', qty: 1, length: 6000, materialGrade: 'A36', heatNumber: 'H789', description: 'Pipe 6 in', traceability: 'T-101'}));
+    if(DOMElements.partsListBody.children.length === 0)
+        DOMElements.partsListBody.appendChild(createPartRow({dwgNumber: 'D-001', mark: 'M-01', pos: 'P-01', qty: 3, length: 1200, material: 'A36', priority: 2}));
+
+    validateAllTables();
+    translateUI();
+};
+
+init();
+
+});
+</script>
+</body>
+</html>
