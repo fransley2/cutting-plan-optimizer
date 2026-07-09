@@ -7,6 +7,7 @@ import {
   deleteMtoItems,
 } from '../data/mtoDB.js';
 import { getAllProjects } from '../data/projects.js';
+import { findEquipmentMatch, listEquipments } from '../data/equipments.js';
 import { openModal, closeModal } from './modal.js';
 import { showToast } from './toast.js';
 
@@ -183,6 +184,7 @@ function itemSearchText(item) {
     item.type,
     item.discipline,
     item.constructionActivity,
+    item.equipmentName,
   ].join(' ').toLowerCase();
 }
 
@@ -473,6 +475,8 @@ function mtoBulkSearchText(item = {}) {
     item.mark,
     item.description,
     item.material,
+    item.equipmentName,
+    item.constructionActivity,
   ].join(' ').toLowerCase();
 }
 
@@ -484,6 +488,40 @@ function groupMtoItemsByDrawing(items = []) {
     groups.get(key).push(item);
   });
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+function mtoConstructionActivityKey(item = {}) {
+  return item.constructionActivity || item.equipmentName || '(sem atividade)';
+}
+
+function groupMtoItemsByConstructionActivity(items = []) {
+  const groups = new Map();
+  items.forEach((item) => {
+    const key = mtoConstructionActivityKey(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+function equipmentLabel(equipment = {}) {
+  return equipment.name || equipment.clientTag || equipment.code || equipment.id || '';
+}
+
+function equipmentHint(item = {}) {
+  return item.equipmentName || item.constructionActivity || '';
+}
+
+function enrichItemsWithEquipment(items = [], equipments = []) {
+  return items.map((item) => {
+    if (item.equipmentId) return item;
+    const match = findEquipmentMatch(equipments, equipmentHint(item));
+    return match ? { ...item, equipmentId: match.id } : item;
+  });
+}
+
+async function getEquipmentCandidates(projectId = '') {
+  return listEquipments(projectId ? { projectId } : {});
 }
 
 function getVisibleBulkItemCheckboxes(body) {
@@ -557,6 +595,27 @@ function renderViewAllBulkLinkButton(unlinkedCount, state, rerender) {
   return button;
 }
 
+function renderUnlinkedEquipmentWarning(unlinkedCount, state, rerender) {
+  if (!state.options.projectId || unlinkedCount <= 0) return document.createDocumentFragment();
+
+  const warning = createEl('section', 'mto-hidden-items-warning');
+  const message = createEl('span', null, `${unlinkedCount} itens sem equipamento vinculado.`);
+  const linkNow = createEl('button', 'btn btn-secondary btn-sm', 'Vincular equipamentos');
+  linkNow.type = 'button';
+  linkNow.addEventListener('click', () => openBulkLinkEquipmentModal(state, rerender));
+  warning.append(message, linkNow);
+  return warning;
+}
+
+function renderViewAllEquipmentBulkLinkButton(unlinkedCount, state, rerender) {
+  if (state.options.projectId || unlinkedCount <= 0) return document.createDocumentFragment();
+
+  const button = createEl('button', 'btn btn-secondary mto-bulk-link-button', `Vincular ${unlinkedCount} itens sem equipamento`);
+  button.type = 'button';
+  button.addEventListener('click', () => openBulkLinkEquipmentModal(state, rerender));
+  return button;
+}
+
 function appendBulkLinkItem(list, item, body) {
   const label = createEl('label', 'mto-bulk-link-item');
   label.dataset.searchText = mtoBulkSearchText(item);
@@ -608,6 +667,14 @@ function buildBulkLinkGroup(drawingNo, items, body) {
 
   group.append(header, itemList);
   return group;
+}
+
+function appendEquipmentOption(select, equipment) {
+  const label = equipmentLabel(equipment);
+  if (!equipment?.id || !label) return;
+  const option = createEl('option', null, label);
+  option.value = equipment.id;
+  select.append(option);
 }
 
 async function openBulkLinkMtoItemsModal(state, rerender) {
@@ -720,6 +787,124 @@ async function openBulkLinkMtoItemsModal(state, rerender) {
   }
 }
 
+async function openBulkLinkEquipmentModal(state, rerender) {
+  try {
+    const [items, equipments] = await Promise.all([
+      getMtoItems(state.options.projectId ? { projectId: state.options.projectId } : {}),
+      getEquipmentCandidates(state.options.projectId || ''),
+    ]);
+    const unlinkedItems = items.filter((item) => !item.equipmentId);
+
+    const body = createEl('div', 'mto-bulk-link-modal');
+    body.append(createEl('p', 'text-muted', 'Selecione os itens sem equipamento e o equipamento destino.'));
+
+    const search = createEl('input');
+    search.className = 'input mto-bulk-link-search';
+    search.type = 'search';
+    search.placeholder = 'Buscar por mark, descricao, material ou atividade...';
+
+    const controls = createEl('div', 'mto-bulk-link-controls');
+    const selectAll = createEl('input');
+    selectAll.type = 'checkbox';
+    selectAll.className = 'mto-bulk-link-select-all';
+    selectAll.id = 'mto-equipment-bulk-link-select-all';
+    const selectAllLabel = createEl('label', null, 'Selecionar todos (visiveis)');
+    selectAllLabel.htmlFor = selectAll.id;
+    const counter = createEl('span', 'mto-bulk-link-counter', '0 de 0 selecionados');
+    controls.append(selectAll, selectAllLabel, counter);
+
+    const equipmentField = createEl('label', 'field');
+    equipmentField.append(createEl('span', null, 'Equipamento destino'));
+    const equipmentSelect = createEl('select');
+    equipmentSelect.className = 'input';
+    const emptyOption = createEl('option', null, 'Selecione...');
+    emptyOption.value = '';
+    equipmentSelect.append(emptyOption);
+    equipments.forEach((equipment) => appendEquipmentOption(equipmentSelect, equipment));
+    equipmentField.append(equipmentSelect);
+
+    const list = createEl('div', 'mto-bulk-link-list mto-bulk-link-groups');
+    if (unlinkedItems.length) {
+      groupMtoItemsByConstructionActivity(unlinkedItems).forEach(([activity, groupItems]) => {
+        list.append(buildBulkLinkGroup(activity, groupItems, body));
+      });
+    } else {
+      list.append(createEl('p', 'text-muted', 'Nao ha itens sem equipamento para vincular.'));
+    }
+
+    search.addEventListener('input', () => applyBulkLinkSearch(body, search.value));
+    selectAll.addEventListener('change', () => {
+      getVisibleBulkItemCheckboxes(body).forEach((checkbox) => {
+        checkbox.checked = selectAll.checked;
+      });
+      updateBulkSelectionState(body);
+    });
+
+    body.append(search, controls, list, equipmentField);
+    updateBulkSelectionState(body);
+
+    openModal({
+      title: 'Vincular Itens da MTO a um Equipamento',
+      body,
+      wide: true,
+      buttons: [
+        { label: 'Cancelar', variant: 'btn-ghost' },
+        {
+          label: 'Tentar vincular automaticamente',
+          variant: 'btn-secondary',
+          closeOnClick: false,
+          onClick: async () => {
+            try {
+              const linkedItems = enrichItemsWithEquipment(unlinkedItems, equipments)
+                .filter((item) => item.equipmentId);
+              await Promise.all(linkedItems.map((item) => updateMtoItem(item.id, { equipmentId: item.equipmentId })));
+              closeModal();
+              showToast(`${linkedItems.length} de ${unlinkedItems.length} itens vinculados automaticamente.`, 'success');
+              await rerender(true);
+            } catch (error) {
+              console.error(error);
+              showToast('Falha ao vincular equipamentos automaticamente.', 'error');
+            }
+          },
+        },
+        {
+          label: 'Vincular Selecionados',
+          variant: 'btn-primary',
+          closeOnClick: false,
+          onClick: async () => {
+            const equipmentId = equipmentSelect.value;
+            if (!equipmentId) {
+              showToast('Selecione um equipamento destino', 'error');
+              return;
+            }
+
+            const selectedIds = [...body.querySelectorAll('.mto-bulk-link-item input:checked')]
+              .map((checkbox) => checkbox.value)
+              .filter(Boolean);
+            if (!selectedIds.length) {
+              showToast('Selecione ao menos um item da MTO', 'error');
+              return;
+            }
+
+            try {
+              await Promise.all(selectedIds.map((id) => updateMtoItem(id, { equipmentId })));
+              closeModal();
+              showToast(`${selectedIds.length} itens vinculados com sucesso`, 'success');
+              await rerender(true);
+            } catch (error) {
+              console.error(error);
+              showToast('Falha ao vincular equipamentos da MTO.', 'error');
+            }
+          },
+        },
+      ],
+    });
+  } catch (error) {
+    console.error(error);
+    showToast('Falha ao carregar itens sem equipamento.', 'error');
+  }
+}
+
 function openDeleteSelectedDialog(items, state, rerender) {
   const body = createEl('div', 'mto-delete-confirm');
   const count = items.length;
@@ -771,6 +956,7 @@ function renderAddRow(state, rerender) {
   });
 
   row.append(renderCell(''));
+  row.append(renderCell(''));
   const actions = createEl('td', 'mto-table-actions');
   const save = createEl('button', 'btn btn-primary btn-sm', 'Salvar');
   save.type = 'button';
@@ -805,7 +991,27 @@ function renderAddRow(state, rerender) {
   return row;
 }
 
-function renderTable(items, state, rerender) {
+function renderEquipmentCell(item, equipmentById = new Map()) {
+  const cell = createEl('td', 'mto-table-equipment');
+  if (item.equipmentId) {
+    const equipment = equipmentById.get(item.equipmentId);
+    const label = equipmentLabel(equipment) || item.equipmentName || '(equipamento vinculado)';
+    cell.append(createEl('span', 'mto-equipment-linked', label));
+    return cell;
+  }
+
+  const value = item.constructionActivity || item.equipmentName || '(sem equipamento)';
+  const wrapper = createEl('span', 'mto-equipment-unlinked');
+  wrapper.title = 'Não vinculado a equipamento';
+  wrapper.append(document.createTextNode(value));
+  const icon = createEl('span', 'material-symbols-outlined mto-alert-icon', 'warning');
+  icon.setAttribute('aria-hidden', 'true');
+  wrapper.append(icon);
+  cell.append(wrapper);
+  return cell;
+}
+
+function renderTable(items, state, rerender, equipmentById = new Map()) {
   const wrap = createEl('div', 'mto-page-table-wrap');
   const table = createEl('table', 'mto-table');
   const thead = createEl('thead');
@@ -829,7 +1035,7 @@ function renderTable(items, state, rerender) {
   selectHead.append(selectAll);
   headRow.append(selectHead);
 
-  ['Status', 'Drawing', 'Rev', 'Mark', 'POS', 'Qty', 'Description', 'Length/mm', 'IdentCode', 'Material', 'Type', 'Discipline', 'Errors', 'Actions']
+  ['Status', 'Drawing', 'Rev', 'Mark', 'POS', 'Qty', 'Description', 'Length/mm', 'IdentCode', 'Material', 'Type', 'Discipline', 'Equipment', 'Errors', 'Actions']
     .forEach((heading) => headRow.append(createEl('th', null, heading)));
   thead.append(headRow);
 
@@ -842,7 +1048,7 @@ function renderTable(items, state, rerender) {
       ? 'Nenhuma linha de MTO importada para o projeto ativo.'
       : 'Nenhuma linha MTO encontrada.';
     const cell = createEl('td', 'mto-table-empty', emptyMessage);
-    cell.colSpan = 15;
+    cell.colSpan = 16;
     row.append(cell);
     tbody.append(row);
   }
@@ -870,6 +1076,8 @@ function renderTable(items, state, rerender) {
       }
       row.append(cell);
     });
+
+    row.append(renderEquipmentCell(item, equipmentById));
 
     const errorsCell = renderCell((item.validationErrors || []).join(', '));
     errorsCell.classList.add('mto-table-errors');
@@ -919,6 +1127,8 @@ async function handleImport(fileInput, state, rerender) {
       projectId: state.options.projectId || '',
       metadata: { sourceFileName: file.name },
     });
+    const equipmentCandidates = await getEquipmentCandidates(state.options.projectId || '');
+    const enrichedItems = enrichItemsWithEquipment(parsed.items, equipmentCandidates);
     await saveMtoImport({
       batch: {
         ...parsed.batch,
@@ -926,7 +1136,7 @@ async function handleImport(fileInput, state, rerender) {
         fileName: file.name,
         importedBy: state.options.importedBy || '',
       },
-      items: parsed.items,
+      items: enrichedItems,
     });
     showToast(`MTO imported: ${parsed.batch.acceptedCount} valid, ${parsed.batch.rejectedCount} rejected`, 'success');
     await rerender(true);
@@ -940,9 +1150,12 @@ async function handleImport(fileInput, state, rerender) {
 
 async function render(container, state) {
   const items = await getMtoItems(state.options.projectId ? { projectId: state.options.projectId } : {});
+  const equipments = await listEquipments({});
+  const equipmentById = new Map(equipments.map((equipment) => [equipment.id, equipment]));
   const unlinkedItems = state.options.projectId
     ? (await getMtoItems({})).filter((item) => !item.projectId)
     : items.filter((item) => !item.projectId);
+  const unlinkedEquipmentItems = items.filter((item) => !item.equipmentId);
   const existingIds = new Set(items.map((item) => item.id));
   state.selectedIds.forEach((id) => {
     if (!existingIds.has(id)) state.selectedIds.delete(id);
@@ -970,7 +1183,12 @@ async function render(container, state) {
   fileInput.hidden = true;
   importButton.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => handleImport(fileInput, state, () => render(container, state)));
-  actions.append(renderViewAllBulkLinkButton(unlinkedItems.length, state, rerender), importButton, fileInput);
+  actions.append(
+    renderViewAllBulkLinkButton(unlinkedItems.length, state, rerender),
+    renderViewAllEquipmentBulkLinkButton(unlinkedEquipmentItems.length, state, rerender),
+    importButton,
+    fileInput,
+  );
   header.append(titleBlock, actions);
 
   const workspace = createEl('section', 'mto-page-workspace');
@@ -981,7 +1199,8 @@ async function render(container, state) {
     renderFilters(items, state, rerender),
     renderSelectionToolbar(items, visibleItems, state, rerender),
     renderHiddenItemsWarning(unlinkedItems.length, state, rerender),
-    renderTable(visibleItems, state, rerender),
+    renderUnlinkedEquipmentWarning(unlinkedEquipmentItems.length, state, rerender),
+    renderTable(visibleItems, state, rerender, equipmentById),
   );
 
   page.append(header, renderDashboard(items), workspace);

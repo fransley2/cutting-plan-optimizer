@@ -2102,6 +2102,29 @@ input:focus, select:focus, textarea:focus {
   color: var(--color-critical);
 }
 
+.mto-table-equipment {
+  min-width: 170px;
+}
+
+.mto-equipment-linked {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.mto-equipment-unlinked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.mto-alert-icon {
+  color: var(--color-warning);
+  font-size: 16px;
+  line-height: 1;
+}
+
 .mto-table-actions {
   white-space: nowrap;
 }

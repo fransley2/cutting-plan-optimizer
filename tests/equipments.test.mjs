@@ -74,6 +74,8 @@ const {
   createEquipment,
   updateEquipment,
   deleteEquipment,
+  findEquipmentByHint,
+  findEquipmentMatch,
   getEquipment,
   listEquipments,
 } = await import('../src/data/equipments.js');
@@ -122,6 +124,10 @@ assert.equal(projectOne[0].id, created.id);
 const inactive = await listEquipments({ status: 'INACTIVE' });
 assert.equal(inactive.length, 1, 'listEquipments should filter by status');
 assert.equal(inactive[0].code, 'EQ-002');
+
+assert.equal(findEquipmentMatch(await listEquipments({}), 'P-1001')?.id, created.id, 'findEquipmentMatch should match clientTag first');
+assert.equal(findEquipmentMatch(await listEquipments({}), 'pump skid updated')?.id, created.id, 'findEquipmentMatch should match name case-insensitively');
+assert.equal((await findEquipmentByHint('EQ-002'))?.code, 'EQ-002', 'findEquipmentByHint should match code');
 
 const invalidStatus = await createEquipment({
   projectId: 'PROJECT-3',

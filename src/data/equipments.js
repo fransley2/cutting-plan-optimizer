@@ -51,6 +51,25 @@ function matchesFilters(record, filters = {}) {
   return true;
 }
 
+function normalizedLookup(value) {
+  return text(value).trim().toLowerCase();
+}
+
+export function findEquipmentMatch(equipments = [], hint) {
+  const normalized = normalizedLookup(hint);
+  if (!normalized) return null;
+  const records = Array.isArray(equipments) ? equipments : [];
+  const fields = ['clientTag', 'name', 'code'];
+  for (const field of fields) {
+    const matches = records.filter((equipment) => normalizedLookup(equipment?.[field]) === normalized);
+    if (matches.length > 1) {
+      console.warn(`Multiple equipments match "${hint}" by ${field}. Using the first match.`);
+    }
+    if (matches.length) return matches[0];
+  }
+  return null;
+}
+
 export async function createEquipment(input = {}) {
   const db = await getDB();
   const record = normalizeEquipment(input);
@@ -84,4 +103,9 @@ export async function listEquipments(filters = {}) {
   const db = await getDB();
   const records = await idbGetAll(db, STORE_NAME);
   return records.filter((record) => matchesFilters(record, filters));
+}
+
+export async function findEquipmentByHint(hint, filters = {}) {
+  if (!text(hint).trim()) return null;
+  return findEquipmentMatch(await listEquipments(filters), hint);
 }

@@ -63,6 +63,17 @@ const withUnit = normalizeMtoRow({ Drawing: 'D', Mark: 'M', Position: 'P', Quant
 assert.equal(withUnit.cutLength, 1500);
 assert.equal(withUnit.requiredLength, 3000);
 
+const withEquipmentName = normalizeMtoRow({
+  Drawing: 'D',
+  Mark: 'M',
+  Position: 'P',
+  Quantity: 1,
+  Material: 'A36',
+  'Length/mm': '1000',
+  'Equipment Name': 'PLEM MODULE',
+});
+assert.equal(withEquipmentName.equipmentName, 'PLEM MODULE');
+
 const errors = validateMtoItem({ drawing: '', mark: '', pos: '', qty: 0, material: '', cutLength: 0 });
 assert.deepEqual(errors, [
   'Missing drawing',

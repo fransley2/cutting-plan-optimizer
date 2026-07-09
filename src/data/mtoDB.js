@@ -90,6 +90,8 @@ function normalizeItem(input = {}, batch = {}) {
     icon: text(input.icon),
     positionStatus: text(input.positionStatus),
     constructionActivity: text(input.constructionActivity),
+    equipmentId: text(input.equipmentId),
+    equipmentName: text(input.equipmentName),
     material: text(input.material),
     line: text(input.line),
     type: text(input.type),
