@@ -115,6 +115,9 @@ function itemSort(a, b) {
 
 function matchesItemFilters(item, filters = {}) {
   const fields = ['batchId', 'projectId', 'drawing', 'mark', 'pos', 'material', 'status', 'identCode', 'discipline', 'type'];
+  // When projectId filter is set, items without projectId are excluded
+  // because the equality check (item.projectId === filters.projectId) fails
+  // for empty/undefined projectId values.
   return fields.every((field) => filters[field] == null || item[field] === String(filters[field]));
 }
 

@@ -1919,6 +1919,123 @@ input:focus, select:focus, textarea:focus {
   background: var(--color-bg);
 }
 
+.mto-hidden-items-warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-bg);
+  color: var(--color-secondary-container);
+}
+
+.mto-hidden-items-warning .btn {
+  margin-left: auto;
+}
+
+.mto-bulk-link-button {
+  white-space: nowrap;
+}
+
+.mto-bulk-link-modal {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.mto-bulk-link-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+}
+
+.mto-bulk-link-counter {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-family: var(--font-family-data);
+  font-size: var(--fs-xs);
+}
+
+.mto-bulk-link-list {
+  display: grid;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.mto-bulk-link-group + .mto-bulk-link-group {
+  border-top: 1px solid var(--color-border);
+}
+
+.mto-bulk-link-group--hidden {
+  display: none !important;
+}
+
+.mto-bulk-link-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-subtle);
+  cursor: pointer;
+  user-select: none;
+}
+
+.mto-bulk-link-group-header:hover {
+  background: var(--color-bg-canvas);
+}
+
+.mto-bulk-link-group-toggle {
+  width: 1rem;
+  color: var(--color-text-muted);
+  font-size: var(--fs-xs);
+}
+
+.mto-bulk-link-group-label {
+  font-weight: 700;
+}
+
+.mto-bulk-link-visible-count {
+  margin-left: auto;
+}
+
+.mto-bulk-link-group-items {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+}
+
+.mto-bulk-link-group-items.collapsed {
+  display: none;
+}
+
+.mto-bulk-link-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+
+.mto-bulk-link-item--hidden {
+  display: none !important;
+}
+
+.mto-bulk-link-item:hover {
+  background: var(--color-bg-subtle);
+}
+
+.mto-bulk-link-item input {
+  margin-top: 2px;
+  accent-color: var(--color-primary);
+}
+
 .mto-page-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--color-border);

@@ -204,7 +204,7 @@ async function refreshActiveProjectSelector() {
   const settings = await getAppSettings();
   activeProjectName = settings.activeProjectName || '';
   const label = button.querySelector('[data-active-project-label]');
-  if (label) label.textContent = activeProjectName || 'Nenhum projeto selecionado';
+  if (label) label.textContent = activeProjectName || 'Ver todos os projetos';
 }
 
 function textValue(value) {
@@ -328,15 +328,42 @@ async function refreshVisibleActiveProjectScopedPage() {
 }
 
 async function openActiveProjectSelector() {
+  const projects = await getAllProjects();
+  const viewAllProject = {
+    id: '__view_all__',
+    name: '— Ver todos os projetos —',
+    client: '',
+    code: '',
+    status: '',
+    _isViewAll: true,
+  };
+  const projectOptions = [viewAllProject, ...projects];
+
   openEntityListModal({
     title: 'Selecionar Projeto Ativo',
-    loadItems: getAllProjects,
+    loadItems: async () => projectOptions,
     searchFields: ['name', 'project', 'client', 'code', 'status'],
-    renderCardMeta: (project) => [
-      `Cliente: ${project.client || 'N/A'} - Codigo: ${project.code || 'N/A'}`,
-      `Status: ${project.status || 'N/A'}`,
-    ],
+    renderCardMeta: (project) => {
+      if (project._isViewAll) {
+        return ['Visualizar todos os dados sem filtro de projeto'];
+      }
+      return [
+        `Cliente: ${project.client || 'N/A'} - Codigo: ${project.code || 'N/A'}`,
+        `Status: ${project.status || 'N/A'}`,
+      ];
+    },
     onLoad: async (project) => {
+      if (project._isViewAll) {
+        await setActiveProjectName('');
+        activeProjectName = '';
+        legacyPlannerProjectData = null;
+        pendingPlannerEquipmentLabel = '';
+        await refreshActiveProjectSelector();
+        await refreshVisibleActiveProjectScopedPage();
+        showToast('Visualizando todos os projetos.', 'success');
+        return;
+      }
+
       const name = project.name || project.project || project.projectName || '';
       if (!name) {
         showToast('Projeto sem nome nao pode ser ativado.', 'error');
@@ -350,7 +377,11 @@ async function openActiveProjectSelector() {
       await refreshVisibleActiveProjectScopedPage();
       showToast(`Projeto "${name}" ativo.`, 'success');
     },
-    onDelete: async () => {
+    onDelete: async (project) => {
+      if (project._isViewAll) {
+        showToast('Use o Gerenciador de Projetos para excluir projetos.', 'error');
+        return;
+      }
       showToast('Use o Gerenciador de Projetos para excluir projetos.', 'error');
     },
     emptyMessage: 'Nenhum projeto cadastrado ainda.',

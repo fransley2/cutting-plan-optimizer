@@ -6,6 +6,7 @@ import {
   updateMtoItem,
   deleteMtoItems,
 } from '../data/mtoDB.js';
+import { getAllProjects } from '../data/projects.js';
 import { openModal, closeModal } from './modal.js';
 import { showToast } from './toast.js';
 
@@ -51,6 +52,10 @@ function formatNumber(value, fractionDigits = 0) {
     maximumFractionDigits: fractionDigits,
     minimumFractionDigits: fractionDigits,
   });
+}
+
+function projectLabel(project = {}) {
+  return String(project.name || project.project || project.projectName || project.id || '');
 }
 
 function itemIsInvalid(item) {
@@ -455,6 +460,266 @@ function renderSelectionToolbar(allItems, visibleItems, state, rerender) {
   return toolbar;
 }
 
+function mtoDrawingKey(item = {}) {
+  return item.drawingNo || item.drawing || '(sem desenho)';
+}
+
+function mtoPositionValue(item = {}) {
+  return item.position || item.pos || '?';
+}
+
+function mtoBulkSearchText(item = {}) {
+  return [
+    item.mark,
+    item.description,
+    item.material,
+  ].join(' ').toLowerCase();
+}
+
+function groupMtoItemsByDrawing(items = []) {
+  const groups = new Map();
+  items.forEach((item) => {
+    const key = mtoDrawingKey(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+function getVisibleBulkItemCheckboxes(body) {
+  return [...body.querySelectorAll('.mto-bulk-link-item-checkbox')]
+    .filter((checkbox) => {
+      const item = checkbox.closest('.mto-bulk-link-item');
+      const group = checkbox.closest('.mto-bulk-link-group');
+      return !item?.classList.contains('mto-bulk-link-item--hidden')
+        && !group?.classList.contains('mto-bulk-link-group--hidden');
+    });
+}
+
+function updateBulkGroupCheckbox(group) {
+  const groupCheckbox = group.querySelector('.mto-bulk-link-group-checkbox');
+  const visibleCheckboxes = [...group.querySelectorAll('.mto-bulk-link-item-checkbox')]
+    .filter((checkbox) => !checkbox.closest('.mto-bulk-link-item')?.classList.contains('mto-bulk-link-item--hidden'));
+  if (!groupCheckbox) return;
+  const checkedCount = visibleCheckboxes.filter((checkbox) => checkbox.checked).length;
+  groupCheckbox.checked = visibleCheckboxes.length > 0 && checkedCount === visibleCheckboxes.length;
+  groupCheckbox.indeterminate = checkedCount > 0 && checkedCount < visibleCheckboxes.length;
+}
+
+function updateBulkSelectionState(body) {
+  const visibleCheckboxes = getVisibleBulkItemCheckboxes(body);
+  const selectedCount = visibleCheckboxes.filter((checkbox) => checkbox.checked).length;
+  const counter = body.querySelector('.mto-bulk-link-counter');
+  const selectAll = body.querySelector('.mto-bulk-link-select-all');
+  if (counter) counter.textContent = `${selectedCount} de ${visibleCheckboxes.length} selecionados`;
+  if (selectAll) {
+    selectAll.checked = visibleCheckboxes.length > 0 && selectedCount === visibleCheckboxes.length;
+    selectAll.indeterminate = selectedCount > 0 && selectedCount < visibleCheckboxes.length;
+  }
+  body.querySelectorAll('.mto-bulk-link-group').forEach(updateBulkGroupCheckbox);
+}
+
+function applyBulkLinkSearch(body, query) {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  body.querySelectorAll('.mto-bulk-link-group').forEach((group) => {
+    let visibleCount = 0;
+    group.querySelectorAll('.mto-bulk-link-item').forEach((row) => {
+      const searchText = row.dataset.searchText || '';
+      const matches = tokens.every((token) => searchText.includes(token));
+      row.classList.toggle('mto-bulk-link-item--hidden', !matches);
+      if (matches) visibleCount += 1;
+    });
+    group.classList.toggle('mto-bulk-link-group--hidden', visibleCount === 0);
+    const count = group.querySelector('.mto-bulk-link-visible-count');
+    if (count) count.textContent = `${visibleCount} visivel(is)`;
+  });
+  updateBulkSelectionState(body);
+}
+
+function renderHiddenItemsWarning(hiddenCount, state, rerender) {
+  if (!state.options.projectId || hiddenCount <= 0) return document.createDocumentFragment();
+
+  const warning = createEl('section', 'mto-hidden-items-warning');
+  const message = createEl('span', null, `${hiddenCount} itens sem projeto estao ocultos.`);
+  const linkNow = createEl('button', 'btn btn-secondary btn-sm', 'Vincular agora');
+  linkNow.type = 'button';
+  linkNow.addEventListener('click', () => openBulkLinkMtoItemsModal(state, rerender));
+  warning.append(message, linkNow);
+  return warning;
+}
+
+function renderViewAllBulkLinkButton(unlinkedCount, state, rerender) {
+  if (state.options.projectId || unlinkedCount <= 0) return document.createDocumentFragment();
+
+  const button = createEl('button', 'btn btn-secondary mto-bulk-link-button', `Vincular ${unlinkedCount} itens sem projeto`);
+  button.type = 'button';
+  button.addEventListener('click', () => openBulkLinkMtoItemsModal(state, rerender));
+  return button;
+}
+
+function appendBulkLinkItem(list, item, body) {
+  const label = createEl('label', 'mto-bulk-link-item');
+  label.dataset.searchText = mtoBulkSearchText(item);
+  const checkbox = createEl('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'mto-bulk-link-item-checkbox';
+  checkbox.value = item.id;
+  checkbox.addEventListener('change', () => updateBulkSelectionState(body));
+
+  const summary = createEl('span');
+  const mark = item.mark || '(sem mark)';
+  const position = mtoPositionValue(item);
+  const description = item.description || 'Sem descricao';
+  summary.textContent = `${mark} / Pos ${position} \u2014 ${description}`;
+
+  label.append(checkbox, summary);
+  list.append(label);
+}
+
+function buildBulkLinkGroup(drawingNo, items, body) {
+  const group = createEl('section', 'mto-bulk-link-group');
+
+  const header = createEl('div', 'mto-bulk-link-group-header');
+  const toggle = createEl('span', 'mto-bulk-link-group-toggle', '▼');
+  const groupCheckbox = createEl('input');
+  groupCheckbox.type = 'checkbox';
+  groupCheckbox.className = 'mto-bulk-link-group-checkbox';
+  const label = createEl('span', 'mto-bulk-link-group-label', `${drawingNo} [${items.length} pecas]`);
+  const visibleCount = createEl('small', 'text-muted mto-bulk-link-visible-count', `${items.length} visivel(is)`);
+  header.append(toggle, groupCheckbox, label, visibleCount);
+
+  const itemList = createEl('div', 'mto-bulk-link-group-items');
+  items.forEach((item) => appendBulkLinkItem(itemList, item, body));
+
+  header.addEventListener('click', (event) => {
+    if (event.target === groupCheckbox) return;
+    const collapsed = itemList.classList.toggle('collapsed');
+    toggle.textContent = collapsed ? '▶' : '▼';
+  });
+
+  groupCheckbox.addEventListener('change', () => {
+    const visibleCheckboxes = [...group.querySelectorAll('.mto-bulk-link-item-checkbox')]
+      .filter((checkbox) => !checkbox.closest('.mto-bulk-link-item')?.classList.contains('mto-bulk-link-item--hidden'));
+    visibleCheckboxes.forEach((checkbox) => {
+      checkbox.checked = groupCheckbox.checked;
+    });
+    updateBulkSelectionState(body);
+  });
+
+  group.append(header, itemList);
+  return group;
+}
+
+async function openBulkLinkMtoItemsModal(state, rerender) {
+  try {
+    const [allItems, projects] = await Promise.all([
+      getMtoItems({}),
+      getAllProjects(),
+    ]);
+    const unlinkedItems = allItems.filter((item) => !item.projectId);
+
+    const body = createEl('div', 'mto-bulk-link-modal');
+    body.append(createEl('p', 'text-muted', 'Selecione os itens sem projeto e o projeto destino.'));
+
+    const search = createEl('input');
+    search.className = 'input mto-bulk-link-search';
+    search.type = 'search';
+    search.placeholder = 'Buscar por mark, descricao ou material...';
+
+    const controls = createEl('div', 'mto-bulk-link-controls');
+    const selectAll = createEl('input');
+    selectAll.type = 'checkbox';
+    selectAll.className = 'mto-bulk-link-select-all';
+    selectAll.id = 'mto-bulk-link-select-all';
+    const selectAllLabel = createEl('label', null, 'Selecionar todos (visiveis)');
+    selectAllLabel.htmlFor = selectAll.id;
+    const counter = createEl('span', 'mto-bulk-link-counter', '0 de 0 selecionados');
+    controls.append(selectAll, selectAllLabel, counter);
+
+    const projectField = createEl('label', 'field');
+    projectField.append(createEl('span', null, 'Projeto destino'));
+    const projectSelect = createEl('select');
+    projectSelect.className = 'input';
+    const emptyOption = createEl('option', null, 'Selecione...');
+    emptyOption.value = '';
+    projectSelect.append(emptyOption);
+    projects.forEach((project) => {
+      const label = projectLabel(project);
+      if (!label) return;
+      const option = createEl('option', null, label);
+      option.value = label;
+      option.selected = label === state.options.projectId;
+      projectSelect.append(option);
+    });
+    projectSelect.value = [...projectSelect.options].some((option) => option.value === state.options.projectId)
+      ? state.options.projectId
+      : '';
+    projectField.append(projectSelect);
+
+    const list = createEl('div', 'mto-bulk-link-list mto-bulk-link-groups');
+    if (unlinkedItems.length) {
+      groupMtoItemsByDrawing(unlinkedItems).forEach(([drawingNo, items]) => {
+        list.append(buildBulkLinkGroup(drawingNo, items, body));
+      });
+    } else {
+      list.append(createEl('p', 'text-muted', 'Nao ha itens sem projeto para vincular.'));
+    }
+
+    search.addEventListener('input', () => applyBulkLinkSearch(body, search.value));
+    selectAll.addEventListener('change', () => {
+      getVisibleBulkItemCheckboxes(body).forEach((checkbox) => {
+        checkbox.checked = selectAll.checked;
+      });
+      updateBulkSelectionState(body);
+    });
+
+    body.append(search, controls, list, projectField);
+    updateBulkSelectionState(body);
+
+    openModal({
+      title: 'Vincular Itens da MTO a um Projeto',
+      body,
+      wide: true,
+      buttons: [
+        { label: 'Cancelar', variant: 'btn-ghost' },
+        {
+          label: 'Vincular Selecionados',
+          variant: 'btn-primary',
+          closeOnClick: false,
+          onClick: async () => {
+            const projectId = projectSelect.value;
+            if (!projectId) {
+              showToast('Selecione um projeto destino', 'error');
+              return;
+            }
+
+            const selectedIds = [...body.querySelectorAll('.mto-bulk-link-item input:checked')]
+              .map((checkbox) => checkbox.value)
+              .filter(Boolean);
+            if (!selectedIds.length) {
+              showToast('Selecione ao menos um item da MTO', 'error');
+              return;
+            }
+
+            try {
+              await Promise.all(selectedIds.map((id) => updateMtoItem(id, { projectId })));
+              closeModal();
+              showToast(`${selectedIds.length} itens vinculados com sucesso`, 'success');
+              await rerender(true);
+            } catch (error) {
+              console.error(error);
+              showToast('Falha ao vincular itens da MTO.', 'error');
+            }
+          },
+        },
+      ],
+    });
+  } catch (error) {
+    console.error(error);
+    showToast('Falha ao carregar itens sem projeto.', 'error');
+  }
+}
+
 function openDeleteSelectedDialog(items, state, rerender) {
   const body = createEl('div', 'mto-delete-confirm');
   const count = items.length;
@@ -675,11 +940,15 @@ async function handleImport(fileInput, state, rerender) {
 
 async function render(container, state) {
   const items = await getMtoItems(state.options.projectId ? { projectId: state.options.projectId } : {});
+  const unlinkedItems = state.options.projectId
+    ? (await getMtoItems({})).filter((item) => !item.projectId)
+    : items.filter((item) => !item.projectId);
   const existingIds = new Set(items.map((item) => item.id));
   state.selectedIds.forEach((id) => {
     if (!existingIds.has(id)) state.selectedIds.delete(id);
   });
   state.options.onSelectionChange?.(selectedItems(items, state));
+  const rerender = (reload = false) => (reload ? refreshMtoPage(container, state.options) : render(container, state));
 
   const page = createEl('section', 'mto-page');
   const header = createEl('div', 'page-header');
@@ -701,17 +970,17 @@ async function render(container, state) {
   fileInput.hidden = true;
   importButton.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => handleImport(fileInput, state, () => render(container, state)));
-  actions.append(importButton, fileInput);
+  actions.append(renderViewAllBulkLinkButton(unlinkedItems.length, state, rerender), importButton, fileInput);
   header.append(titleBlock, actions);
 
   const workspace = createEl('section', 'mto-page-workspace');
-  const rerender = (reload = false) => (reload ? refreshMtoPage(container, state.options) : render(container, state));
   const visibleItems = getVisibleMtoItems(items, state);
   workspace.append(
     renderTabs(state, rerender),
     renderEquipmentGroups(items, state, rerender),
     renderFilters(items, state, rerender),
     renderSelectionToolbar(items, visibleItems, state, rerender),
+    renderHiddenItemsWarning(unlinkedItems.length, state, rerender),
     renderTable(visibleItems, state, rerender),
   );
 
