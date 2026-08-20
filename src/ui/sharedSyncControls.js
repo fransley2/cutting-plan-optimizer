@@ -27,12 +27,39 @@ function lockTiming(lock, timeoutMs, now = Date.now()) {
   return `há ${elapsedLabel(lock?.acquiredAt, now)} · expira em ${remainingLabel(lock, timeoutMs, now)}`;
 }
 
+function syncStoreLabel(state) {
+  return state.fileName?.replace(/\.json$/i, '').replace(/-/g, ' ').toUpperCase() || state.key;
+}
+
+function syncErrorDetail(state, prefix) {
+  const message = state?.error?.message || 'Falha desconhecida.';
+  return `${prefix} ${syncStoreLabel(state)}: ${message}`;
+}
+
+export function hasUnsyncedLocalChanges(states) {
+  return states.some((state) => state.dirty || state.syncing);
+}
+
+export function shouldWarnBeforeUnload(states) {
+  return hasUnsyncedLocalChanges(states);
+}
+
+export function protectUnsyncedBeforeUnload(event, states) {
+  if (!shouldWarnBeforeUnload(states)) return false;
+  event.preventDefault();
+  event.returnValue = true;
+  return true;
+}
+
 export function getSharedSyncIndicator(states, configured, sessionId = '', now = Date.now(), lockTimeoutMs = 15 * 60_000) {
   const latest = states.map((state) => state.lastSyncedAt).filter(Boolean).sort().at(-1) || '';
   const pendingCount = states.reduce((total, state) => total + (state.dirty ? Math.max(1, Number(state.pendingChanges) || 0) : 0), 0);
   const lockedState = states.find((state) => state.lock && state.lock.sessionId !== sessionId);
   if (!configured) return { kind: 'offline', label: 'Offline', icon: 'power_off', detail: 'Pasta compartilhada não configurada.', pendingCount, latest };
-  if (states.some((state) => state.offline)) return { kind: 'offline', label: 'Offline', icon: 'power_off', detail: 'Sem acesso à pasta compartilhada.', pendingCount, latest };
+  const offlineState = states.find((state) => state.offline);
+  if (offlineState) return { kind: 'offline', label: 'Offline', icon: 'power_off', detail: syncErrorDetail(offlineState, 'Sem acesso à pasta compartilhada em'), pendingCount, latest };
+  const errorState = states.find((state) => state.error);
+  if (errorState) return { kind: 'error', label: 'Erro', icon: 'error', detail: syncErrorDetail(errorState, 'Erro de sincronização em'), pendingCount, latest };
   if (lockedState) {
     const store = lockedState.fileName?.replace(/\.json$/i, '').toUpperCase() || lockedState.key;
     const timing = lockTiming(lockedState.lock, lockTimeoutMs, now);
@@ -42,7 +69,26 @@ export function getSharedSyncIndicator(states, configured, sessionId = '', now =
     return { kind: 'locked', label: 'Bloqueado', icon: 'lock', detail: `${lockedState.lock.userName || 'Outro usuário'} está editando ${store} · ${timing}.`, pendingCount, latest, lockKey: lockedState.key, lock: lockedState.lock };
   }
   if (states.some((state) => state.syncing)) return { kind: 'syncing', label: 'Sincronizando', icon: 'sync', detail: 'Sincronização em andamento.', pendingCount, latest };
-  if (states.some((state) => state.newerAvailable)) return { kind: 'pending', label: 'Pendente', icon: 'schedule', detail: 'Há alterações novas de outro usuário — sincronizar.', pendingCount, latest };
+  const conflictStates = states.filter((state) => state.newerAvailable && state.dirty);
+  if (conflictStates.length) {
+    const first = conflictStates[0];
+    const suffix = conflictStates.length > 1 ? ` e mais ${conflictStates.length - 1}` : '';
+    return {
+      kind: 'conflict',
+      label: 'Conflito',
+      icon: 'warning',
+      detail: `Conflito em ${syncStoreLabel(first)}${suffix}. Recarregue os dados remotos antes de salvar.`,
+      pendingCount,
+      latest,
+      conflictKey: first.key,
+      conflict: first.conflict,
+    };
+  }
+  const updateStates = states.filter((state) => state.newerAvailable);
+  if (updateStates.length) {
+    const suffix = updateStates.length === 1 ? syncStoreLabel(updateStates[0]) : `${updateStates.length} áreas`;
+    return { kind: 'update', label: 'Atualizar', icon: 'download', detail: `Atualização remota disponível em ${suffix}.`, pendingCount, latest };
+  }
   if (pendingCount) {
     const suffix = pendingCount === 1 ? 'alteração pendente' : 'alterações pendentes';
     return { kind: 'pending', label: 'Pendente', icon: 'schedule', detail: `${pendingCount} ${suffix}.`, pendingCount, latest };
@@ -89,6 +135,7 @@ export function createSharedSyncControls({
   let directoryName = '';
   let popover = null;
   let readonlySignature = '';
+  let recoveryInProgress = false;
 
   const button = () => document.getElementById('shared-sync-button');
   const label = () => document.querySelector('[data-shared-sync-label]');
@@ -120,6 +167,14 @@ export function createSharedSyncControls({
     popover.querySelector('[data-sync-detail-pending]').textContent = String(status.pendingCount);
     popover.querySelector('[data-sync-detail-last]').textContent = formatLastSync(status.latest);
     popover.querySelector('[data-sync-detail-folder]').textContent = directoryName || 'Não configurada';
+    popover.querySelector('[data-sync-detail-state]').textContent = status.label;
+    popover.querySelector('[data-sync-status-detail]').textContent = status.detail;
+    const primaryAction = popover.querySelector('[data-sync-primary-action]');
+    primaryAction.textContent = status.kind === 'conflict'
+      ? 'Resolver conflito'
+      : status.kind === 'update' ? 'Atualizar agora'
+        : ['offline', 'error'].includes(status.kind) ? 'Tentar reconectar' : 'Sincronizar agora';
+    primaryAction.dataset.conflictKey = status.kind === 'conflict' ? status.conflictKey : '';
     const lockDetail = popover.querySelector('[data-sync-lock-detail]');
     const takeOver = popover.querySelector('[data-sync-take-over]');
     const forceRelease = popover.querySelector('[data-sync-force-release]');
@@ -186,6 +241,7 @@ export function createSharedSyncControls({
       ['Alterações pendentes', 'sync-detail-pending'],
       ['Último sync', 'sync-detail-last'],
       ['Pasta', 'sync-detail-folder'],
+      ['Estado', 'sync-detail-state'],
     ].forEach(([term, field]) => {
       const dt = document.createElement('dt');
       const dd = document.createElement('dd');
@@ -196,11 +252,21 @@ export function createSharedSyncControls({
     const action = document.createElement('button');
     action.type = 'button';
     action.className = 'btn btn-primary btn-sm';
+    action.dataset.syncPrimaryAction = '';
     action.textContent = 'Sincronizar agora';
     action.addEventListener('click', () => {
       closePopover();
-      void syncNow();
+      const conflictKey = action.dataset.conflictKey;
+      if (conflictKey) {
+        const state = manager.getState(conflictKey);
+        void openConflict(new SyncConflictError(conflictKey, state.conflict));
+      } else {
+        void syncNow();
+      }
     });
+    const statusDetail = document.createElement('p');
+    statusDetail.className = 'shared-sync-status-detail';
+    statusDetail.dataset.syncStatusDetail = '';
     const lockDetail = document.createElement('p');
     lockDetail.className = 'shared-sync-lock-detail';
     lockDetail.dataset.syncLockDetail = '';
@@ -222,7 +288,7 @@ export function createSharedSyncControls({
     forceRelease.hidden = true;
     forceRelease.addEventListener('click', () => void confirmForceRelease([forceRelease.dataset.lockKey]));
     lockActions.append(takeOver, forceRelease);
-    panel.append(heading, details, lockDetail, lockActions, action);
+    panel.append(heading, details, statusDetail, lockDetail, lockActions, action);
     document.body.append(panel);
     return panel;
   }
@@ -341,8 +407,36 @@ export function createSharedSyncControls({
     reconcileReadonlyFromState();
   }
 
-  function showOfflineNotice() {
-    showToast('Sem acesso a pasta compartilhada — trabalhando offline. Suas alteracoes serao sincronizadas quando a conexao voltar.', 'warning');
+  function showOfflineNotice(error = null, key = '') {
+    const area = key ? ` (${syncStoreLabel(manager.getState(key))})` : '';
+    const reason = error?.message ? ` Motivo: ${error.message}` : '';
+    if (key && manager.getState(key).error && !manager.getState(key).offline) {
+      showToast(`Erro de sincronização${area}.${reason} A pasta continua acessível e os dados locais foram preservados.`, 'error');
+      return;
+    }
+    showToast(`Sem acesso à pasta compartilhada${area} — trabalhando offline.${reason} Suas alterações locais foram preservadas.`, 'warning');
+  }
+
+  function handleBeforeUnload(event) {
+    protectUnsyncedBeforeUnload(event, manager.getStates());
+  }
+
+  async function attemptAutomaticRecovery() {
+    if (!configured || recoveryInProgress) return false;
+    const offlineKeys = manager.getStates().filter((state) => state.offline).map((state) => state.key);
+    if (!offlineKeys.length) return false;
+    recoveryInProgress = true;
+    try {
+      if (await adapter.queryPermission() !== 'granted') return false;
+      const results = await manager.loadStores(offlineKeys);
+      const recovered = results.every((result) => !result.error);
+      if (recovered) showToast('Acesso à pasta compartilhada restabelecido.', 'success');
+      return recovered;
+    } catch {
+      return false;
+    } finally {
+      recoveryInProgress = false;
+    }
   }
 
   async function ensureConnected({ select = false, request = false, onBeforeCommit } = {}) {
@@ -393,28 +487,41 @@ export function createSharedSyncControls({
       showToast('Conexao com a pasta compartilhada restabelecida.', 'success');
       return true;
     } catch (error) {
-      showOfflineNotice();
+      showOfflineNotice(error);
       return false;
     }
   }
 
   async function openConflict(error) {
     const remote = error.remote || {};
+    const state = manager.getState(error.storeKey);
+    const area = syncStoreLabel(state);
     const modifier = await resolveUserName?.(remote.lastModifiedBy) || remote.lastModifiedBy || 'Outro usuario';
+    const identity = await manager.requireIdentity().catch(() => null);
+    const sameUser = identity?.id && String(remote.lastModifiedBy || '') === identity.id;
     const when = remote.lastModifiedAt ? new Date(remote.lastModifiedAt).toLocaleString('pt-BR') : 'horario desconhecido';
-    const body = document.createElement('p');
-    body.textContent = `${modifier} salvou alteracoes em ${when}. Recarregue antes de salvar para nao perder o trabalho dele.`;
+    const body = document.createElement('div');
+    const message = document.createElement('p');
+    message.textContent = sameUser
+      ? `Outra sessão sua salvou alterações em ${area} às ${when}.`
+      : `${modifier} salvou alterações em ${area} às ${when}.`;
+    const versions = document.createElement('p');
+    versions.className = 'text-muted';
+    versions.textContent = `Versão local carregada: ${state.loadedVersion || 0} · versão compartilhada: ${remote.version || 0}.`;
+    const instruction = document.createElement('p');
+    instruction.textContent = 'Recarregar descartará as alterações locais pendentes desta área e carregará a versão compartilhada. Cancelar mantém seu trabalho local sem sobrescrever o arquivo.';
+    body.append(message, versions, instruction);
     openModal({
-      title: 'Conflito de sincronizacao',
+      title: `Conflito de sincronização — ${area}`,
       body,
       buttons: [
         { label: 'Cancelar', variant: 'btn-ghost' },
-        { label: 'Recarregar', variant: 'btn-primary', closeOnClick: false, onClick: async () => {
+        { label: `Recarregar ${area}`, variant: 'btn-primary', closeOnClick: false, onClick: async () => {
           try {
             await manager.reloadStore(error.storeKey);
             closeModal();
             await refreshCurrentPhase?.();
-            showToast('Dados compartilhados recarregados. Alteracoes locais nao salvas foram descartadas.', 'success');
+            showToast(`${area} recarregado. O conflito foi resolvido e as alterações locais dessa área foram descartadas.`, 'success');
           } catch (reloadError) {
             showToast(reloadError.message || 'Nao foi possivel recarregar os dados.', 'error');
           }
@@ -454,7 +561,7 @@ export function createSharedSyncControls({
       return true;
     } catch (error) {
       console.error('[shared-sync] Falha ao sincronizar.', error);
-      showOfflineNotice();
+      showOfflineNotice(error);
       return false;
     }
   }
@@ -467,15 +574,17 @@ export function createSharedSyncControls({
     currentKeys = nextKeys;
     if (!configured || !nextKeys.length) return;
     const locks = [];
+    const failures = [];
     for (const key of nextKeys) {
       try {
         const lock = await manager.acquireLock(key);
         if (lock?.ownedByCurrentUser) locks.push({ key, lock });
       } catch (error) {
         if (error instanceof SyncLockError || error instanceof SyncOwnLockError) locks.push({ key, lock: error.lock });
-        else showOfflineNotice();
+        else failures.push({ key, error });
       }
     }
+    if (failures.length) showOfflineNotice(failures[0].error, failures[0].key);
     if (locks.length) setReadonly(phase, locks);
   }
 
@@ -488,12 +597,16 @@ export function createSharedSyncControls({
     document.addEventListener('click', blockReadonlyWrites, true);
     document.addEventListener('pointerdown', handleOutsidePointer);
     document.addEventListener('keydown', handlePopoverKeydown);
+    globalThis.addEventListener?.('beforeunload', handleBeforeUnload);
     globalThis.addEventListener?.('resize', positionPopover);
     globalThis.addEventListener?.('scroll', closePopover, true);
     button()?.addEventListener('click', togglePopover);
     button()?.setAttribute('aria-expanded', 'false');
     button()?.setAttribute('aria-controls', 'shared-sync-popover');
-    statusTimer = globalThis.setInterval?.(handleManagerState, 30_000) || null;
+    statusTimer = globalThis.setInterval?.(() => {
+      handleManagerState();
+      void attemptAutomaticRecovery();
+    }, 30_000) || null;
     const handle = await adapter.restoreDirectory();
     configured = Boolean(handle);
     directoryName = handle?.name || '';
@@ -502,10 +615,11 @@ export function createSharedSyncControls({
     try {
       if (await adapter.queryPermission() !== 'granted') return { configured: true, permissionRequired: true };
       const results = await manager.loadStores();
-      if (results.some((result) => result.error)) showOfflineNotice();
+      const failure = results.find((result) => result.error);
+      if (failure) showOfflineNotice(failure.error, failure.key);
       return { configured: true, results };
     } catch (error) {
-      showOfflineNotice();
+      showOfflineNotice(error);
       return { configured: true, error };
     }
   }
@@ -516,6 +630,7 @@ export function createSharedSyncControls({
     document.removeEventListener('click', blockReadonlyWrites, true);
     document.removeEventListener('pointerdown', handleOutsidePointer);
     document.removeEventListener('keydown', handlePopoverKeydown);
+    globalThis.removeEventListener?.('beforeunload', handleBeforeUnload);
     globalThis.removeEventListener?.('resize', positionPopover);
     globalThis.removeEventListener?.('scroll', closePopover, true);
     button()?.removeEventListener('click', togglePopover);

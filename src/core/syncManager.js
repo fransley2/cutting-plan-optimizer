@@ -80,6 +80,15 @@ function annotateLock(lock, identity, sessionId) {
   };
 }
 
+function isOfflineFailure(error) {
+  return ![
+    'INVALID_SYNC_FILE',
+    'IDENTITY_REQUIRED',
+    'INVALID_PATH',
+    'WATCH_NOT_SUPPORTED',
+  ].includes(error?.code);
+}
+
 function initialState(definition) {
   return {
     key: definition.key,
@@ -94,6 +103,7 @@ function initialState(definition) {
     syncing: false,
     offline: false,
     newerAvailable: false,
+    conflict: null,
     error: null,
     lock: null,
   };
@@ -225,10 +235,12 @@ export class SyncManager {
       if (!remote) remote = await this.createRemoteFromLocal(key);
       const state = this.states.get(key);
       if (state.dirty && !discardLocalChanges) {
+        const hasConflict = state.loadedVersion > 0 && remote.version !== state.loadedVersion;
         this.updateState(key, {
           offline: false,
           syncing: false,
-          newerAvailable: state.loadedVersion > 0 && remote.version !== state.loadedVersion,
+          newerAvailable: hasConflict,
+          conflict: hasConflict ? remote : null,
           error: null,
         });
         this.startWatching(key);
@@ -246,13 +258,14 @@ export class SyncManager {
         syncing: false,
         offline: false,
         newerAvailable: false,
+        conflict: null,
         error: null,
       });
       await this.persistMetadata(key);
       this.startWatching(key);
       return { key, preservedLocalChanges: false, remote };
     } catch (error) {
-      this.setOffline(key, error);
+      this.recordFailure(key, error);
       throw error;
     }
   }
@@ -288,7 +301,11 @@ export class SyncManager {
 
   async requireIdentity() {
     const identity = await this.identityProvider?.();
-    if (!identity?.id) throw new Error('Selecione um usuario antes de sincronizar.');
+    if (!identity?.id) {
+      const error = new Error('Selecione um usuario antes de sincronizar.');
+      error.code = 'IDENTITY_REQUIRED';
+      throw error;
+    }
     return { id: String(identity.id), name: String(identity.name || identity.id) };
   }
 
@@ -309,7 +326,7 @@ export class SyncManager {
       }
       return this.writeCurrentLock(key, identity);
     } catch (error) {
-      if (!(error instanceof SyncLockError) && !(error instanceof SyncOwnLockError)) this.setOffline(key, error);
+      if (!(error instanceof SyncLockError) && !(error instanceof SyncOwnLockError)) this.recordFailure(key, error);
       throw error;
     }
   }
@@ -346,7 +363,7 @@ export class SyncManager {
       }
       return await this.writeCurrentLock(key, identity);
     } catch (error) {
-      if (!(error instanceof SyncLockError) && !(error instanceof SyncOwnLockError)) this.setOffline(key, error);
+      if (!(error instanceof SyncLockError) && !(error instanceof SyncOwnLockError)) this.recordFailure(key, error);
       throw error;
     }
   }
@@ -374,7 +391,7 @@ export class SyncManager {
       this.updateState(key, { lock, offline: false, error: null });
       return true;
     } catch (error) {
-      this.setOffline(key, error);
+      this.recordFailure(key, error);
       return false;
     }
   }
@@ -393,7 +410,7 @@ export class SyncManager {
       this.updateState(key, { lock: null, offline: false, error: null });
       return true;
     } catch (error) {
-      this.setOffline(key, error);
+      this.recordFailure(key, error);
       throw error;
     }
   }
@@ -412,6 +429,12 @@ export class SyncManager {
       const remote = await this.readRemote(key);
       const remoteVersion = remote?.version || 0;
       if (remoteVersion !== state.loadedVersion) {
+        this.updateState(key, {
+          newerAvailable: true,
+          conflict: remote,
+          offline: false,
+          error: null,
+        });
         await this.releaseLock(key);
         throw new SyncConflictError(key, remote);
       }
@@ -433,6 +456,7 @@ export class SyncManager {
         syncing: false,
         offline: false,
         newerAvailable: false,
+        conflict: null,
         error: null,
       });
       await this.persistMetadata(key);
@@ -442,7 +466,7 @@ export class SyncManager {
       if (error instanceof SyncConflictError || error instanceof SyncLockError || error instanceof SyncOwnLockError) {
         this.updateState(key, { syncing: false });
       } else {
-        this.setOffline(key, error);
+        this.recordFailure(key, error);
       }
       throw error;
     }
@@ -496,14 +520,14 @@ export class SyncManager {
       this.updateState(key, { lock, offline: false, error: null });
       return lock;
     } catch (error) {
-      this.setOffline(key, error);
+      this.recordFailure(key, error);
       return null;
     }
   }
 
   async handleWatchedLockChange(key, change) {
     if (change?.error) {
-      this.setOffline(key, change.error);
+      this.recordFailure(key, change.error);
       return;
     }
     await this.refreshLockState(key);
@@ -524,7 +548,7 @@ export class SyncManager {
 
   async handleWatchedChange(key, change) {
     if (change?.error) {
-      this.setOffline(key, change.error);
+      this.recordFailure(key, change.error);
       return;
     }
     try {
@@ -532,10 +556,14 @@ export class SyncManager {
       const state = this.states.get(key);
       if (!remote || (remote.version === state.loadedVersion && remote.lastModifiedAt === state.lastModifiedAt)) return;
       if (remote.lastModifiedSessionId === this.sessionId) return;
-      this.updateState(key, { newerAvailable: true, offline: false, error: null });
+      this.updateState(key, { newerAvailable: true, conflict: remote, offline: false, error: null });
     } catch (error) {
-      this.setOffline(key, error);
+      this.recordFailure(key, error);
     }
+  }
+
+  recordFailure(key, error) {
+    this.updateState(key, { syncing: false, offline: isOfflineFailure(error), error });
   }
 
   setOffline(key, error) {
@@ -543,7 +571,8 @@ export class SyncManager {
   }
 
   async releaseLocks(keys = [...this.definitions.keys()]) {
-    await Promise.all(keys.map(async (key) => {
+    const ownedKeys = keys.filter((key) => this.states.get(key)?.lock?.sessionId === this.sessionId);
+    await Promise.all(ownedKeys.map(async (key) => {
       try { await this.releaseLock(key); } catch { /* status already records the error */ }
     }));
   }
@@ -563,6 +592,7 @@ export class SyncManager {
         syncing: false,
         offline: false,
         newerAvailable: false,
+        conflict: null,
         error: null,
         lock: null,
       });

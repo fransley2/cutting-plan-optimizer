@@ -6,7 +6,7 @@ import {
   SyncLockError,
   SyncManager,
 } from '../src/core/syncManager.js';
-import { getSharedSyncIndicator } from '../src/ui/sharedSyncControls.js';
+import { getSharedSyncIndicator, protectUnsyncedBeforeUnload, shouldWarnBeforeUnload } from '../src/ui/sharedSyncControls.js';
 import { getOrCreateSharedSyncSession } from '../src/data/sharedSyncSession.js';
 
 class FakeAdapter {
@@ -78,6 +78,71 @@ test('save detects a remote version conflict and never overwrites the newer file
   await assert.rejects(context.manager.syncStore('mto'), SyncConflictError);
   assert.equal(JSON.parse(context.adapter.files.get('mto.json')).version, 2);
   assert.deepEqual(context.records.get('mtoItems'), [{ id: 'local-change' }]);
+  assert.equal(context.manager.getState('mto').newerAvailable, true);
+  assert.equal(context.manager.getState('mto').conflict.version, 2);
+  assert.equal(getSharedSyncIndicator(context.manager.getStates(), true, 'session-a').kind, 'conflict');
+
+  await context.manager.reloadStore('mto');
+  assert.equal(context.manager.getState('mto').dirty, false);
+  assert.equal(context.manager.getState('mto').newerAvailable, false);
+  assert.equal(context.manager.getState('mto').conflict, null);
+  assert.equal(getSharedSyncIndicator(context.manager.getStates(), true, 'session-a').kind, 'synced');
+  assert.deepEqual(context.records.get('mtoItems'), [{ id: 'remote-v2' }]);
+});
+
+test('indicator distinguishes a remote update from a local-versus-remote conflict', async () => {
+  const context = fixture({ files: { 'mto.json': document(1, [{ id: 'remote-v1' }]) } });
+  await context.manager.loadStore('mto');
+  context.adapter.files.set('mto.json', document(2, [{ id: 'remote-v2' }], 'user-b', '2026-08-20T12:20:00.000Z'));
+
+  await context.manager.handleWatchedChange('mto', {});
+  const update = getSharedSyncIndicator(context.manager.getStates(), true, 'session-a');
+  assert.equal(update.kind, 'update');
+  assert.equal(update.label, 'Atualizar');
+
+  await context.manager.markDirtyByStoreName('mtoItems');
+  const conflict = getSharedSyncIndicator(context.manager.getStates(), true, 'session-a');
+  assert.equal(conflict.kind, 'conflict');
+  assert.equal(conflict.label, 'Conflito');
+  assert.match(conflict.detail, /MTO/);
+});
+
+test('beforeunload warning is required only while local changes are not confirmed remotely', async () => {
+  const context = fixture({ files: { 'mto.json': document(1, [{ id: 'remote-v1' }]) } });
+  await context.manager.loadStore('mto');
+  assert.equal(shouldWarnBeforeUnload(context.manager.getStates()), false);
+
+  await context.manager.markDirtyByStoreName('mtoItems');
+  assert.equal(shouldWarnBeforeUnload(context.manager.getStates()), true);
+  const event = { prevented: false, returnValue: null, preventDefault() { this.prevented = true; } };
+  assert.equal(protectUnsyncedBeforeUnload(event, context.manager.getStates()), true);
+  assert.equal(event.prevented, true);
+  assert.equal(event.returnValue, true);
+
+  await context.manager.syncStore('mto');
+  assert.equal(shouldWarnBeforeUnload(context.manager.getStates()), false);
+});
+
+test('invalid lock content is reported as an error without declaring the shared folder offline', async () => {
+  const context = fixture({ files: { 'mto.lock': '{invalid-json' } });
+
+  await assert.rejects(context.manager.acquireLock('mto'), /JSON malformado/);
+
+  const state = context.manager.getState('mto');
+  assert.equal(state.offline, false);
+  assert.equal(state.error.code, 'INVALID_SYNC_FILE');
+  const indicator = getSharedSyncIndicator([state], true, context.manager.sessionId);
+  assert.equal(indicator.kind, 'error');
+  assert.match(indicator.detail, /mto\.lock/i);
+});
+
+test('releaseLocks avoids network access for stores without a lock owned by this session', async () => {
+  const context = fixture();
+  context.adapter.offline = true;
+
+  await context.manager.releaseLocks(['mto']);
+
+  assert.equal(context.manager.getState('mto').offline, false);
 });
 
 test('expired locks are replaced while active locks remain protected', async () => {
