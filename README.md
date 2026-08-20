@@ -1,93 +1,104 @@
-# Cutting Plan Optimizer — v2 (Saipem CTCO)
+# Cutting Plan Optimizer — SAIPEM CTCO
 
-Reestruturação do app original (arquivo único de ~3000 linhas) em módulos ES nativos,
-sem build step, sem framework. Abrir com Live Server (VS Code) ou `python -m http.server`
-— **não** abrir com `file://` direto, pois ES modules exigem HTTP.
+Aplicação web para planejamento de corte, gestão de materiais e fluxo de fabricação.
+É construída com JavaScript e ES Modules nativos, sem framework e sem etapa de build.
 
-## Estrutura
+## Executar localmente
 
+Use um servidor HTTP local; não abra o `index.html` diretamente com `file://`.
+
+```powershell
+python -m http.server 8000
 ```
-index.html                 shell HTML, só estrutura
+
+Depois, abra `http://localhost:8000` em uma versão atual do Microsoft Edge ou Google
+Chrome. A sincronização por pasta compartilhada depende da File System Access API.
+
+## Funcionalidades principais
+
+- projetos, equipamentos, desenhos e MTO;
+- compras, previsões de entrega e recebimento de materiais;
+- inventário, reservas, movimentos de estoque e rastreabilidade;
+- Workpacks, Material Coupons, Cutting Sheets e RMV;
+- otimização FFD/BFD com kerf, trim, offcuts e múltiplas passagens;
+- relatórios operacionais, impressão, etiquetas e exportações Excel/PDF;
+- identidade multiusuário por sessão e trilha de auditoria;
+- IndexedDB como banco local de trabalho;
+- sincronização opcional entre usuários por pasta de rede compartilhada.
+
+## Arquitetura
+
+```text
+index.html                    shell da aplicação
 src/
-  styles/
-    tokens.css              cores, fontes, espaçamento (fonte única de verdade do design)
-    app.css                 componentes: card, KPI, tabela, filtro, botão, diagrama de corte
-  core/
-    utils.js                helpers puros (parse, format, id)
-    allocate.js              ← MOTOR DE OTIMIZAÇÃO (FFD/BFD), 100% portado, sem DOM
-  ui/
-    dataTable.js             tabela editável genérica (substitui createStockRow/createPartRow duplicados)
-    columns.js               config de colunas de Estoque e Peças (dados, não código)
-    results.js               renderização de KPIs + diagrama de corte
-    toast.js
-  data/
-    plans.js                 salvar/carregar planos (localStorage)
-    excel.js                 import/export via SheetJS
-  main.js                    único ponto de wiring (event listeners)
+  core/                       regras de domínio e otimização
+    allocate.js               motor puro de nesting; não acessa DOM ou persistência
+    fileAdapters/             interface de arquivos, adapter web e stub Electron
+    syncManager.js            versões, conflitos, locks, heartbeat e watchers
+  data/                       IndexedDB, importação, exportação e metadados
+  ui/                         páginas, componentes e interação com o usuário
+  reports/                    relatórios, impressão e apresentações
+  workflows/                  transações e fluxos entre módulos
+  styles/                     tokens e componentes visuais
+tests/                        testes Node sem build step
 ```
 
-## Por que essa estrutura (aplicando as 7 perguntas em cada decisão)
+O IndexedDB continua sendo a cópia rápida de trabalho. Regras de negócio não ficam
+misturadas com renderização, e `src/core/allocate.js` permanece isolado como motor puro
+de otimização.
 
-- **Sem React/Vue/build step.** O app é majoritariamente formulário + tabela + um
-  diagrama SVG-like em `div`s. ES modules nativos do navegador já dão import/export,
-  escopo e organização — um framework aqui seria peso sem ganho (pergunta 1: *does this
-  need to exist?* → não).
-- **Sem Tailwind CDN.** Você tem um design system fechado e específico (cores exatas,
-  fonte exata, componentes Fluent/Power BI). Um utility-framework genérico não ajuda
-  aqui — ele existia no original só por conveniência inicial. `tokens.css` + `app.css`
-  são ~230 linhas e cobrem 100% da UI, com controle total sobre o resultado visual.
-- **SheetJS (xlsx) mantido.** Parsing de planilha é complexo o suficiente para não
-  reinventar (pergunta 5: *installed dependency? → use it*).
-- **`allocate.js` sem `Promise`.** O original envolvia o algoritmo síncrono em uma
-  `Promise` sem motivo (não há nada assíncrono). Isso foi removido. Se um plano muito
-  grande travar a UI no futuro, a solução correta é um Web Worker — não uma Promise
-  decorativa.
-- **`crypto.randomUUID()`** no lugar do gerador de UUID manual do original — plataforma
-  nativa faz isso melhor (pergunta 4).
-- **`structuredClone()`** no lugar de `JSON.parse(JSON.stringify(...))` — mesma lógica,
-  nativo do navegador.
-- **Uma tabela genérica (`dataTable.js`)** no lugar de duas implementações quase
-  idênticas (`createStockRow`, `createPartRow` no original, ~160 linhas somadas).
-  Agora é ~100 linhas reutilizáveis + duas listas de colunas de ~10 linhas cada.
+## Sincronização por pasta compartilhada
 
-## O que já funciona nesta v2
+A sincronização permite usar uma pasta UNC ou unidade mapeada selecionada pelo picker
+do navegador como alternativa a um backend em nuvem.
 
-- Sidebar + top app bar (navegação por âncora entre as seções)
-- Dados do Projeto (Projeto, Cliente, Equipamento, Workpack)
-- Cadastro de Estoque e Peças (tabela editável, colar do Excel, duplicar/excluir linha)
-- Upload de planilha .xlsx/.csv para Estoque e Peças
-- Motor de otimização completo (FFD + BFD, kerf, retalho mínimo, aparo, estratégias de
-  uso de estoque)
-- Resultados: KPIs (estilo Power BI) + diagrama de corte por barra
-- Export para Excel do plano otimizado
-- **Salvar / Carregar Plano** — modal genérico (`ui/modal.js`) + listagem com busca
-  (`ui/planListModal.js`), persistindo em `localStorage` via `data/plans.js`
+- a pasta é selecionada com `showDirectoryPicker()` e o directory handle é persistido
+  no IndexedDB;
+- a aplicação valida permissão de escrita antes de salvar a configuração;
+- cada store sincronizável possui seu próprio arquivo JSON versionado;
+- antes de gravar, o `SyncManager` relê a versão remota e bloqueia sobrescritas quando
+  detecta conflito;
+- falhas de rede ou permissão mantêm o trabalho local e colocam o indicador em modo
+  offline;
+- a pill da topbar mostra os estados sincronizado, pendente, sincronizando, bloqueado,
+  editando em outra aba e offline;
+- o popover informa pendências, último sync, pasta selecionada e ações disponíveis.
 
-## O que ainda falta portar do arquivo original
+### Locks
 
-Cada um destes deve seguir o mesmo padrão: lógica pura em `core/` ou `data/`, DOM em
-`ui/`, sem misturar.
+Ao editar uma área sincronizada, o sistema cria um arquivo `.lock` ao lado do JSON.
+O lock contém `userId`, `userName`, `acquiredAt` e `sessionId`, recebe heartbeat e
+expira após 15 minutos sem atualização.
 
-1. **Importar Cupom de Material** (parsing de célula por endereço/label no Excel) —
-   pode virar `data/couponImport.js`, função pura que recebe o worksheet e devolve um
-   objeto de dados do projeto.
-2. **Inventário via IndexedDB** — vale um módulo `data/inventoryDB.js` com as mesmas
-   4 funções do original (init, save, get, clear), mais um modal reaproveitando
-   `dataTable.js` (mesma estrutura de tabela genérica) e `ui/modal.js` (já pronto).
-3. **Impressão (visual / tabular / cutting sheet / pro-style)** — cada modo de
-   impressão pode virar uma função em `reports/print*.js` que monta HTML a partir da
-   `solution` (mesmo formato de dados que `results.js` já usa) — reaproveita 100% do
-   `allocate.js`.
-4. **Geração de etiquetas** — `reports/labels.js`, mesma ideia.
-5. **i18n** — o original tem 4 idiomas com muita string duplicada. Antes de portar,
-   vale confirmar: os 4 idiomas são realmente usados na operação, ou só en/pt-br
-   cobrem 100% dos casos reais? (pergunta 1 da sua regra). Se sim, um
-   `i18n/translations.js` simples com `{ en: {...}, 'pt-br': {...} }` resolve.
-6. **Toggle de labels / cor / fonte no diagrama** — são flags de estado simples,
-   cabem como parâmetros extras em `renderCutSheets(container, solution, options)`.
+A identidade do navegador/dispositivo é persistida em `localStorage`; a sessão da aba
+fica em `sessionStorage`, sobrevivendo a reloads sem confundir abas diferentes. Quando
+o mesmo usuário encontra um lock de outra aba ou dispositivo, a UI oferece **Assumir
+aqui**. Locks de outro usuário permanecem somente leitura e podem ser liberados por uma
+ação administrativa confirmada.
 
-## Próximo passo sugerido no Codex/VS Code
+O arquivo de dados é observado por polling leve e o arquivo de lock por polling mais
+curto. A expiração também é verificada em memória, permitindo atualizar a UI sem uma
+nova tentativa explícita de edição.
 
-Abra este projeto e peça, item por item da lista acima, aplicando a mesma regra das
-7 perguntas antes de cada função nova. O algoritmo (`allocate.js`) e o design system
-(`tokens.css`/`app.css`) não devem mudar — são a base estável do resto.
+> A File System Access API expõe o nome do directory handle, mas não fornece ao
+> JavaScript o caminho UNC completo selecionado.
+
+## Testes
+
+Execute toda a suíte com:
+
+```powershell
+node --test
+```
+
+Os testes incluem otimização, persistência, transações, importações, relatórios,
+conflitos de versão, onboarding da pasta compartilhada, operação offline e ciclo de
+vida dos locks.
+
+## Compatibilidade e restrições
+
+- JavaScript ES Modules, HTML e CSS nativos;
+- sem framework de UI e sem build step;
+- File System Access API suportada principalmente por navegadores Chromium;
+- o adapter Electron existe apenas como interface preparada para integração futura;
+- `legacy/original.html` é somente uma referência histórica e não é executado.

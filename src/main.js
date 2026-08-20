@@ -14,7 +14,16 @@ import {
   updateProject,
 } from './data/projects.js';
 import { clearActiveUserId, getActiveUser } from './data/userSession.js';
-import { migrateLegacyProfileToUsers } from './data/users.js';
+import { getUser, migrateLegacyProfileToUsers } from './data/users.js';
+import { subscribeToIdbChanges } from './data/idb.js';
+import { createFsApiAdapter } from './core/fileAdapters/fsApiAdapter.js';
+import { SyncManager } from './core/syncManager.js';
+import { createSharedDirectoryHandleStore } from './data/sharedDirectoryHandle.js';
+import { createSharedSyncCache } from './data/sharedSyncCache.js';
+import { SHARED_SYNC_STORES, syncKeysForPhase } from './data/sharedSyncConfig.js';
+import { createSharedSyncMetadataStore } from './data/sharedSyncMetadata.js';
+import { getOrCreateSharedSyncSession } from './data/sharedSyncSession.js';
+import { createSharedSyncControls } from './ui/sharedSyncControls.js';
 import { getAppSettings, saveAppSettings, getActiveProjectName, setActiveProjectName } from './data/appSettings.js';
 import { getCurrentLanguage, observeTranslations, setLanguage, t, translateDom } from './i18n/index.js';
 import {
@@ -203,6 +212,8 @@ let equipmentPageInitialized = false;
 let workpackPageInitialized = false;
 let drawingPageInitialized = false;
 let cuttingSheetsPageInitialized = false;
+let sharedSyncManager = null;
+let sharedSyncControls = null;
 const reportViewOptions = {
   labels: {
     sequence: true,
@@ -329,6 +340,52 @@ function showPhase(phase) {
   if (normalizedPhase === 'data-quality') void renderOrRefreshDataQualityPage();
   if (normalizedPhase === 'reports') void renderOrRefreshReportsPage();
   if (normalizedPhase === 'genealogy') void renderOrRefreshGenealogyPage();
+  void sharedSyncControls?.enterPhase(normalizedPhase);
+}
+
+async function refreshCurrentSyncPhase() {
+  const refreshers = {
+    mto: renderOrRefreshMtoPage,
+    inventory: renderOrRefreshInventoryPage,
+    procurement: renderOrRefreshProcurementPage,
+    projects: renderOrRefreshProjectManagerPage,
+    equipments: renderOrRefreshEquipmentPage,
+    drawings: renderOrRefreshDrawingPage,
+    workpacks: renderOrRefreshWorkpackPage,
+    'material-coupons': renderOrRefreshMaterialCouponManager,
+    'cut-sheets': renderOrRefreshCuttingSheetsPage,
+    'return-material': renderOrRefreshReturnMaterialPage,
+    audit: renderOrRefreshAuditPage,
+  };
+  await refreshers[currentPhase]?.();
+}
+
+async function initializeSharedFolderSync() {
+  const adapter = createFsApiAdapter({ handleStore: createSharedDirectoryHandleStore() });
+  const syncSession = getOrCreateSharedSyncSession();
+  sharedSyncManager = new SyncManager({
+    adapter,
+    cache: createSharedSyncCache(),
+    storeDefinitions: SHARED_SYNC_STORES,
+    identityProvider: () => currentProfile || getActiveUser(),
+    metadataStore: createSharedSyncMetadataStore(),
+    deviceSessionId: syncSession.deviceSessionId,
+    sessionId: syncSession.sessionId,
+  });
+  sharedSyncControls = createSharedSyncControls({
+    manager: sharedSyncManager,
+    adapter,
+    syncKeysForPhase,
+    getCurrentPhase: () => currentPhase,
+    refreshCurrentPhase: refreshCurrentSyncPhase,
+    resolveUserName: async (id) => (await getUser(id))?.name || '',
+    openModal,
+    closeModal,
+    showToast,
+  });
+  const result = await sharedSyncControls.initialize({ subscribeToIdbChanges });
+  window.addEventListener('pagehide', () => void sharedSyncManager?.releaseLocks(), { once: true });
+  return result;
 }
 
 async function refreshProfileButton(user = null) {
@@ -1032,6 +1089,7 @@ async function handleSettingsClick() {
         await refreshMaterialsCatalogDatalist();
         renderHome();
       },
+      sharedSync: sharedSyncControls,
     });
   } catch (error) {
     console.error(error);
@@ -3057,6 +3115,13 @@ async function init() {
     console.error('Falha ao inicializar usuários.', error);
     showToast(error.message || 'Não foi possível inicializar os usuários.', 'error');
     return;
+  }
+
+  try {
+    await initializeSharedFolderSync();
+  } catch (error) {
+    console.error('Falha ao inicializar sincronizacao por pasta compartilhada.', error);
+    showToast('A sincronizacao compartilhada nao iniciou. Os dados locais continuam disponiveis.', 'warning');
   }
 
   try {

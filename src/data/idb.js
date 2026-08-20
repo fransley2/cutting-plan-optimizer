@@ -4,6 +4,20 @@
 import { showToast } from '../ui/toast.js';
 
 let dbPromise = null;
+const changeListeners = new Set();
+
+function notifyStoreChanges(storeNames) {
+  const names = [...new Set((Array.isArray(storeNames) ? storeNames : [storeNames]).filter(Boolean))];
+  changeListeners.forEach((listener) => {
+    try { listener(names); } catch (error) { console.error('Falha em listener de alteracao do IndexedDB.', error); }
+  });
+}
+
+export function subscribeToIdbChanges(listener) {
+  if (typeof listener !== 'function') throw new TypeError('O listener de alteracoes do IndexedDB deve ser uma funcao.');
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+}
 
 export function openDatabase(name, version, upgrade) {
   if (dbPromise) return dbPromise;
@@ -54,7 +68,10 @@ export function idbPut(db, storeName, value) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readwrite');
     tx.objectStore(storeName).put(value);
-    tx.oncomplete = () => resolve(value);
+    tx.oncomplete = () => {
+      notifyStoreChanges(storeName);
+      resolve(value);
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -63,7 +80,10 @@ export function idbDelete(db, storeName, key) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readwrite');
     tx.objectStore(storeName).delete(key);
-    tx.oncomplete = () => resolve(true);
+    tx.oncomplete = () => {
+      notifyStoreChanges(storeName);
+      resolve(true);
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -72,7 +92,10 @@ export function idbClear(db, storeName) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, 'readwrite');
     tx.objectStore(storeName).clear();
-    tx.oncomplete = () => resolve(true);
+    tx.oncomplete = () => {
+      notifyStoreChanges(storeName);
+      resolve(true);
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -105,9 +128,14 @@ export function idbTransaction(db, storeNames, mode, operation) {
       reject(error);
       return;
     }
-    transaction.oncomplete = () => operationError
-      ? reject(operationError)
-      : resolve(result);
+    transaction.oncomplete = () => {
+      if (operationError) {
+        reject(operationError);
+        return;
+      }
+      if (mode === 'readwrite') notifyStoreChanges(names);
+      resolve(result);
+    };
     transaction.onabort = () => reject(operationError || transaction.error || new Error('IndexedDB transaction aborted.'));
     transaction.onerror = () => reject(transaction.error || new Error('IndexedDB transaction failed.'));
   });

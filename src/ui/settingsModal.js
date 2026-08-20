@@ -223,7 +223,7 @@ function openClearAllConfirmation(onSettingsChange) {
   });
 }
 
-export async function openSettingsModal({ onSettingsChange } = {}) {
+export async function openSettingsModal({ onSettingsChange, sharedSync = null } = {}) {
   const [settings, localDataSummary] = await Promise.all([getAppSettings(), getLocalDataSummary()]);
   const materials = [...settings.materialsCatalog];
   const reportHeaderSettings = settings.reportHeader;
@@ -442,6 +442,42 @@ export async function openSettingsModal({ onSettingsChange } = {}) {
   maintenancePanel.append(maintenanceTitle, maintenanceText, maintenanceActions);
   dataSection.append(dataIntro, dataMetrics, backupPanel, maintenancePanel);
 
+  const sharedSyncSection = section('Pasta compartilhada');
+  const sharedSyncIntro = document.createElement('p');
+  sharedSyncIntro.className = 'text-muted';
+  sharedSyncIntro.textContent = 'Selecione uma pasta de rede por meio do navegador. O IndexedDB continua sendo a copia local de trabalho; os arquivos JSON fazem a sincronizacao entre usuarios.';
+  const sharedSyncStatus = document.createElement('strong');
+  sharedSyncStatus.className = 'shared-sync-settings-status';
+  sharedSyncStatus.textContent = sharedSync?.isConfigured?.()
+    ? 'Pasta configurada neste navegador.'
+    : 'Nenhuma pasta configurada.';
+  const sharedSyncActions = document.createElement('div');
+  sharedSyncActions.className = 'settings-actions';
+  const selectSharedFolder = document.createElement('button');
+  selectSharedFolder.type = 'button';
+  selectSharedFolder.className = 'btn btn-secondary';
+  selectSharedFolder.textContent = sharedSync?.isConfigured?.() ? 'Trocar pasta compartilhada' : 'Selecionar pasta compartilhada';
+  selectSharedFolder.disabled = !sharedSync;
+  selectSharedFolder.addEventListener('click', async () => {
+    const connected = await runButtonAction(selectSharedFolder, 'Validando pasta…', () => sharedSync.connectOrChangeFolder());
+    if (connected) {
+      sharedSyncStatus.textContent = 'Pasta configurada e gravavel.';
+      selectSharedFolder.textContent = 'Trocar pasta compartilhada';
+      reconnectSharedFolder.disabled = false;
+    }
+  });
+  const reconnectSharedFolder = document.createElement('button');
+  reconnectSharedFolder.type = 'button';
+  reconnectSharedFolder.className = 'btn btn-ghost';
+  reconnectSharedFolder.textContent = 'Tentar reconectar';
+  reconnectSharedFolder.disabled = !sharedSync?.isConfigured?.();
+  reconnectSharedFolder.addEventListener('click', async () => {
+    const connected = await runButtonAction(reconnectSharedFolder, 'Reconectando…', () => sharedSync.reconnect());
+    if (connected) sharedSyncStatus.textContent = 'Conexao restabelecida.';
+  });
+  sharedSyncActions.append(selectSharedFolder, reconnectSharedFolder);
+  sharedSyncSection.append(sharedSyncIntro, sharedSyncStatus, sharedSyncActions);
+
   const languageSection = section('Language');
   const languageSelect = document.createElement('select');
   SUPPORTED_LANGUAGES.forEach(({ code, label }) => {
@@ -471,6 +507,7 @@ export async function openSettingsModal({ onSettingsChange } = {}) {
     { id: 'reports', label: 'Relatorios', icon: 'article', el: reports },
     { id: 'material-coupon-form', label: 'Material Coupon', icon: 'confirmation_number', el: materialCouponForm },
     { id: 'rmv-form', label: 'Returned Material Voucher', icon: 'assignment_return', el: returnMaterialVoucherForm },
+    { id: 'shared-sync', label: 'Pasta compartilhada', icon: 'folder_shared', el: sharedSyncSection },
     { id: 'data', label: 'Dados e Backup', icon: 'database', el: dataSection },
     { id: 'about', label: 'Sobre', icon: 'info', el: about },
   ];
