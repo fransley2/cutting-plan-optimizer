@@ -1,15 +1,17 @@
+import { cuttingSheetBarPoItem } from '../core/cuttingSheetPresentation.js';
+
 const DEFAULT_COLUMNS = {
   trace: 0,
   category: 3,
   po: 17,
-  item: 18,
+  poItem: 18,
   qty: 34,
-  length: 9,
-  material: 25,
-  heat: 24,
-  desc: 4,
-  thkMm: 6,
-  diaOdMm: 7,
+  lengthMm: 9,
+  materialGrade: 25,
+  heatNo: 24,
+  materialDescription: 4,
+  thicknessMm: 6,
+  diaMm: 7,
   widthMm: 8,
 };
 
@@ -17,14 +19,14 @@ const COMPACT_COLUMNS = {
   trace: 0,
   category: 1,
   po: 2,
-  item: 3,
+  poItem: 3,
   qty: 4,
-  length: 5,
-  material: 6,
-  heat: 7,
-  desc: 8,
-  thkMm: 9,
-  diaOdMm: 10,
+  lengthMm: 5,
+  materialGrade: 6,
+  heatNo: 7,
+  materialDescription: 8,
+  thicknessMm: 9,
+  diaMm: 10,
   widthMm: 11,
 };
 
@@ -37,33 +39,34 @@ const REAL_HEADER_ALIASES = {
   category: ['Category'],
   materialDescription: ['Material Description', 'Description', 'Desc'],
   materialClassification: ['Material Classification'],
-  thkMm: ['Thk (mm)', 'Thickness', 'Thickness [mm]', 'Thk'],
-  diaOdMm: ['Dia. (OD) (mm)', 'Dia OD', 'OD', 'Diameter'],
+  thicknessMm: ['Thk (mm)', 'Thickness', 'Thickness [mm]', 'Thk'],
+  diaMm: ['Dia. (OD) (mm)', 'Dia OD', 'OD', 'Diameter'],
   widthMm: ['Width (mm)', 'Width'],
-  length: ['Length (mm)', 'Length'],
-  unitOfMeasure: ['Unit of Measure', 'Unit', 'UOM', 'Un.'],
-  totalWeightKg: ['Total Weight (KG)', 'Weight/kg', 'Weight [Kg]', 'Weight'],
+  lengthMm: ['Length (mm)', 'Length'],
+  unit: ['Unit of Measure', 'Unit', 'UOM', 'Un.'],
+  weightKg: ['Total Weight (KG)', 'Weight/kg', 'Weight [Kg]', 'Weight'],
   qty: ['Qty', 'Quantity'],
-  entryInvoice: ['Entry Invoice [NF]', 'Entry Invoice', 'NF arrival'],
+  nfArrival: ['Entry Invoice [NF]', 'Entry Invoice', 'NF arrival'],
   receivedDate: ['Received Date'],
   mrr: ['MRR'],
   poSubject: ['PO Subject / Chrono Number', 'PO Subject', 'Chrono Number'],
-  poNumber: ['PO Number', 'PO'],
+  po: ['PO Number', 'PO'],
   poItem: ['PO Item #', 'PO ITEM', 'PO Item', 'Item'],
-  sapCode: ['SAP Code', 'IdentCode'],
+  sapCode: ['SAP Code'],
+  identCode: ['IDENT CODE', 'IdentCode', 'Ident Code'],
   regime: ['Regime'],
   partNumber: ['Part Number'],
   serialNumber: ['Serial Number'],
   mtcNumber: ['MTC Number [Certificate]', 'MTC Number', 'Certificate'],
-  heat: ['Heat Number', 'Heat No.', 'Heat'],
-  material: ['Material & Grade', 'Mat. Grade', 'Material / Grade', 'Material'],
-  mirNumber: ['MIR Number', 'MIR'],
+  heatNo: ['Heat Number', 'Heat No.', 'Heat'],
+  materialGrade: ['Material & Grade', 'Mat. Grade', 'Material / Grade', 'Material'],
+  mir: ['MIR Number', 'MIR'],
   inspectionStatus: ['Inspection Status'],
   acceptanceStatus: ['Acceptance Status'],
   colorCode: ['Color Code'],
-  storageLocation: ['Storage Location', 'Location'],
+  location: ['Storage Location', 'Location'],
   locationZone: ['Location Zone'],
-  equipmentDesignation: ['Equipment Designation', 'Equipment'],
+  equipment: ['Equipment Designation', 'Equipment'],
   totalPoQty: ['Total PO Qty'],
   receivedQty: ['Received Qty'],
   issuedQty: ['Issued Mat. Qty', 'Issued Qty'],
@@ -72,14 +75,12 @@ const REAL_HEADER_ALIASES = {
   exitDate: ['Exit / Movement Date at CTCO', 'Exit Date'],
   exitInvoice: ['Exit Invoice [NF]', 'Exit Invoice'],
   rmvNo: ['RMV No.', 'RMV No'],
-  disponibilidade: ['Disponibilidade'],
-  comments: ['Comments', 'Notes', 'Remarks'],
+  notes: ['Comments', 'Notes', 'Remarks'],
 };
 
 function text(value) {
   return String(value ?? '').trim();
 }
-
 function normalizeHeader(value) {
   return text(value).toLowerCase().replace(/\s+/g, ' ').replace(/[.:#]/g, '').trim();
 }
@@ -126,41 +127,34 @@ function parseHeaderMappedRow(values, columnMap) {
     poItemPo: valueAt(values, columnMap, 'poItemPo'),
     category: valueAt(values, columnMap, 'category'),
     materialDescription: valueAt(values, columnMap, 'materialDescription'),
-    desc: valueAt(values, columnMap, 'materialDescription'),
-    description: valueAt(values, columnMap, 'materialDescription'),
     materialClassification: valueAt(values, columnMap, 'materialClassification'),
-    thkMm: valueAt(values, columnMap, 'thkMm'),
-    diaOdMm: valueAt(values, columnMap, 'diaOdMm'),
+    thicknessMm: valueAt(values, columnMap, 'thicknessMm'),
+    diaMm: valueAt(values, columnMap, 'diaMm'),
     widthMm: valueAt(values, columnMap, 'widthMm'),
-    length: toNumber(valueAt(values, columnMap, 'length')),
-    currentLength: toNumber(valueAt(values, columnMap, 'length')),
-    unitOfMeasure: valueAt(values, columnMap, 'unitOfMeasure'),
-    totalWeightKg: toNumber(valueAt(values, columnMap, 'totalWeightKg')),
-    entryInvoice: valueAt(values, columnMap, 'entryInvoice'),
+    lengthMm: toNumber(valueAt(values, columnMap, 'lengthMm')),
+    unit: valueAt(values, columnMap, 'unit'),
+    weightKg: toNumber(valueAt(values, columnMap, 'weightKg')),
+    nfArrival: valueAt(values, columnMap, 'nfArrival'),
     receivedDate: valueAt(values, columnMap, 'receivedDate'),
     mrr: valueAt(values, columnMap, 'mrr'),
     poSubject: valueAt(values, columnMap, 'poSubject'),
-    poNumber: valueAt(values, columnMap, 'poNumber'),
-    po: valueAt(values, columnMap, 'poNumber'),
+    po: valueAt(values, columnMap, 'po'),
     poItem: valueAt(values, columnMap, 'poItem'),
-    item: valueAt(values, columnMap, 'poItem'),
     sapCode: valueAt(values, columnMap, 'sapCode'),
+    identCode: valueAt(values, columnMap, 'identCode'),
     regime: valueAt(values, columnMap, 'regime'),
     partNumber: valueAt(values, columnMap, 'partNumber'),
     serialNumber: valueAt(values, columnMap, 'serialNumber'),
     mtcNumber: valueAt(values, columnMap, 'mtcNumber'),
-    heat: valueAt(values, columnMap, 'heat'),
-    heatNumber: valueAt(values, columnMap, 'heat'),
-    material: valueAt(values, columnMap, 'material'),
-    materialGrade: valueAt(values, columnMap, 'material'),
-    mirNumber: valueAt(values, columnMap, 'mirNumber'),
+    heatNo: valueAt(values, columnMap, 'heatNo'),
+    materialGrade: valueAt(values, columnMap, 'materialGrade'),
+    mir: valueAt(values, columnMap, 'mir'),
     inspectionStatus: valueAt(values, columnMap, 'inspectionStatus'),
     acceptanceStatus: valueAt(values, columnMap, 'acceptanceStatus'),
     colorCode: valueAt(values, columnMap, 'colorCode'),
-    storageLocation: valueAt(values, columnMap, 'storageLocation'),
-    location: valueAt(values, columnMap, 'storageLocation'),
+    location: valueAt(values, columnMap, 'location'),
     locationZone: valueAt(values, columnMap, 'locationZone'),
-    equipmentDesignation: valueAt(values, columnMap, 'equipmentDesignation'),
+    equipment: valueAt(values, columnMap, 'equipment'),
     totalPoQty: toNumber(valueAt(values, columnMap, 'totalPoQty')),
     receivedQty: toNumber(valueAt(values, columnMap, 'receivedQty')),
     issuedQty: toNumber(valueAt(values, columnMap, 'issuedQty')),
@@ -169,11 +163,9 @@ function parseHeaderMappedRow(values, columnMap) {
     exitDate: valueAt(values, columnMap, 'exitDate'),
     exitInvoice: valueAt(values, columnMap, 'exitInvoice'),
     rmvNo: valueAt(values, columnMap, 'rmvNo'),
-    disponibilidade: valueAt(values, columnMap, 'disponibilidade'),
-    comments: valueAt(values, columnMap, 'comments'),
-    notes: valueAt(values, columnMap, 'comments'),
+    notes: valueAt(values, columnMap, 'notes'),
     qty: toNumber(valueAt(values, columnMap, 'qty'), toNumber(valueAt(values, columnMap, 'balanceQty'), 1)) || 1,
-    status: 'N/A',
+    status: 'available',
   };
 }
 
@@ -201,22 +193,22 @@ export function parseInventoryRows(rows) {
     if (!trace || trace.toLowerCase() === 'traceability') continue;
 
     const qty = Number.parseInt(String(values[columnMap.qty] || '1').trim(), 10);
-    const length = Number.parseFloat(String(values[columnMap.length] || '0').trim());
+    const lengthMm = Number.parseFloat(String(values[columnMap.lengthMm] || '0').trim());
 
     parsed.push({
       trace,
       category: String(values[columnMap.category] || '').trim(),
       po: String(values[columnMap.po] || '').trim(),
-      item: String(values[columnMap.item] || '').trim(),
+      poItem: String(values[columnMap.poItem] || '').trim(),
       qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
-      length: Number.isFinite(length) && length > 0 ? length : 0,
-      material: String(values[columnMap.material] || '').trim(),
-      heat: String(values[columnMap.heat] || '').trim(),
-      desc: String(values[columnMap.desc] || '').trim(),
-      thkMm: String(values[columnMap.thkMm] || '').trim(),
-      diaOdMm: String(values[columnMap.diaOdMm] || '').trim(),
+      lengthMm: Number.isFinite(lengthMm) && lengthMm > 0 ? lengthMm : 0,
+      materialGrade: String(values[columnMap.materialGrade] || '').trim(),
+      heatNo: String(values[columnMap.heatNo] || '').trim(),
+      materialDescription: String(values[columnMap.materialDescription] || '').trim(),
+      thicknessMm: String(values[columnMap.thicknessMm] || '').trim(),
+      diaMm: String(values[columnMap.diaMm] || '').trim(),
       widthMm: String(values[columnMap.widthMm] || '').trim(),
-      status: 'N/A',
+      status: 'available',
     });
   }
 
@@ -224,48 +216,20 @@ export function parseInventoryRows(rows) {
 }
 
 export function mapInventoryItemToStockRow(item) {
-  const qty = Number.parseInt(item.qty || 1, 10);
-  const length = Number.parseFloat(item.length || item.currentLength || 0);
+  const balanceQty = Number.parseInt(item.balanceQty, 10);
+  const qty = Number.isFinite(balanceQty) && balanceQty > 0
+    ? balanceQty
+    : Number.parseInt(item.qty || 1, 10);
+  const lengthMm = Number.parseFloat(item.lengthMm || 0);
 
   return {
-    po: item.po || item.poNumber || '',
-    item: item.item || item.poItem || '',
+    po: item.po || '',
+    poItem: cuttingSheetBarPoItem(item),
     qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
-    length: Number.isFinite(length) && length > 0 ? length : 0,
-    materialGrade: item.material || item.materialGrade || '',
-    heatNumber: item.heat || item.heatNumber || '',
-    description: item.desc || item.description || item.materialDescription || '',
+    lengthMm: Number.isFinite(lengthMm) && lengthMm > 0 ? lengthMm : 0,
+    materialGrade: item.materialGrade || '',
+    heatNo: item.heatNo || '',
+    materialDescription: item.materialDescription || '',
     traceability: item.trace || item.traceability || '',
   };
-}
-
-export function filterInventoryItems(items, term = '') {
-  const normalized = term.trim().toLowerCase();
-  if (!normalized) return items;
-  return items.filter((item) => [
-    item.trace,
-    item.category,
-    item.po,
-    item.item,
-    item.material,
-    item.materialGrade,
-    item.materialDescription,
-    item.materialClassification,
-    item.desc,
-    item.length,
-    item.thkMm ?? item.refF,
-    item.diaOdMm ?? item.refG,
-    item.widthMm ?? item.refH,
-    item.heat,
-    item.heatNumber,
-    item.vendor,
-    item.sapCode,
-    item.storageLocation,
-    item.locationZone,
-    item.equipmentDesignation,
-    item.materialCouponNo,
-    item.rmvNo,
-    item.disponibilidade,
-    item.comments,
-  ].some((value) => String(value || '').toLowerCase().includes(normalized)));
 }

@@ -6,10 +6,6 @@ export function buildResultsWindowHtml() {
   return '';
 }
 
-export function renderResultsWindowContent() {
-  return '';
-}
-
 export function openResultsWindow() {
   return false;
 }

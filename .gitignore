@@ -31,3 +31,5 @@ build/
 # Codex / agent scratch
 CODEX_NOTES.md
 .agent/
+.continue/
+tmp/

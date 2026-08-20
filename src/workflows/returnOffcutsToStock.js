@@ -1,4 +1,6 @@
 // src/workflows/returnOffcutsToStock.js
+import { createOffcutTraceability } from '../core/offcutTraceability.js';
+export { createOffcutTraceability } from '../core/offcutTraceability.js';
 
 export const RETURN_OFFCUT_MODES = Object.freeze({
   OPERATIONAL_STOCK: "OPERATIONAL_STOCK",
@@ -125,23 +127,6 @@ function getRmvId(parentCuttingPackage = {}, offcut = {}, settings = {}) {
   );
 }
 
-export function createOffcutTraceability(parentTrace, index, settings = {}) {
-  const cfg = { ...DEFAULT_SETTINGS, ...settings };
-
-  const baseTrace = cleanText(
-    pickFirst(cfg.tracePrefix, parentTrace, "TRACE")
-  );
-
-  const numericIndex = normalizeNumber(index, cfg.traceStartIndex);
-  const paddedIndex = String(numericIndex).padStart(cfg.tracePadSize, "0");
-
-  return [
-    baseTrace,
-    cfg.traceSuffix,
-    paddedIndex
-  ].filter(Boolean).join(cfg.traceSeparator);
-}
-
 function buildCommonOffcutFields(offcut, parentCuttingPackage, index, settings) {
   const parentStock = getParentStock(parentCuttingPackage);
   const parentTrace = getParentTrace(parentCuttingPackage, offcut);
@@ -153,35 +138,32 @@ function buildCommonOffcutFields(offcut, parentCuttingPackage, index, settings) 
     parentStock.po
   );
 
-  const item = pickFirst(
+  const poItem = pickFirst(
+    offcut.poItem,
     offcut.item,
-    parentCuttingPackage.item,
-    parentStock.item
+    parentStock.poItem
   );
 
   const heat = pickFirst(
+    offcut.heatNo,
     offcut.heat,
-    offcut.heatNumber,
+    parentCuttingPackage.heatNo,
     parentCuttingPackage.heat,
-    parentCuttingPackage.heatNumber,
-    parentStock.heat,
-    parentStock.heatNumber
+    parentStock.heatNo
   );
 
   const material = pickFirst(
-    offcut.material,
     offcut.materialGrade,
     parentCuttingPackage.material,
     parentCuttingPackage.materialGrade,
-    parentStock.material,
     parentStock.materialGrade,
     parentStock.grade
   );
 
   const description = pickFirst(
+    offcut.materialDescription,
     offcut.description,
-    parentCuttingPackage.description,
-    parentStock.description
+    parentStock.materialDescription
   );
 
   return {
@@ -191,31 +173,19 @@ function buildCommonOffcutFields(offcut, parentCuttingPackage, index, settings) 
     parentInventoryId: parentStock.id ?? null,
     parentTrace,
     po: po ?? "",
-    item: item ?? "",
-    heat: heat ?? "",
-    heatNumber: heat ?? "",
-    material: material ?? "",
+    poItem: poItem ?? "",
+    heatNo: heat ?? "",
     materialGrade: material ?? "",
-    description: description ?? "",
-    length: normalizeNumber(
-      pickFirst(offcut.length, offcut.lengthMm, offcut.remainingLength, offcut.offcutLength),
-      0
-    ),
+    materialDescription: description ?? "",
     lengthMm: normalizeNumber(
       pickFirst(offcut.lengthMm, offcut.length, offcut.remainingLength, offcut.offcutLength),
       0
     ),
-    width: normalizeNumber(pickFirst(offcut.width, offcut.widthMm), 0),
     widthMm: normalizeNumber(pickFirst(offcut.widthMm, offcut.width), 0),
-    thickness: normalizeNumber(
-      pickFirst(offcut.thickness, offcut.thicknessMm, offcut.thk),
-      0
-    ),
     thicknessMm: normalizeNumber(
       pickFirst(offcut.thicknessMm, offcut.thickness, offcut.thk),
       0
     ),
-    quantity: normalizeNumber(pickFirst(offcut.quantity, offcut.qty), 1),
     qty: normalizeNumber(pickFirst(offcut.qty, offcut.quantity), 1),
     weightKg: normalizeNumber(offcut.weightKg, 0),
     isOffcut: true,
@@ -285,8 +255,7 @@ export function returnOffcutsToStock(
         traceability: createOffcutTraceability(common.parentTrace, sequence, cfg),
         status: RETURN_OFFCUT_STATUS.AVAILABLE_OFFCUT,
         source: "OFFCUT_RETURN",
-        availableLength: common.lengthMm,
-        availableLengthMm: common.lengthMm
+        parentStockId: common.parentInventoryId
       };
 
       inventoryItemsToAdd.push(inventoryItem);

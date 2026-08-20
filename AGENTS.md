@@ -80,7 +80,7 @@ futuro" sem justificar por que as 6 perguntas acima não resolveram.
 * `src/data/cuttingSheets.js`
 * `src/data/returnMaterialVouchers.js`
 
-* `src/ui/mtoImportModal.js`
+* MTO import is implemented in `src/ui/mtoPage.js` (no separate import modal).
 * `src/ui/mtoMatchModal.js`
 * `src/ui/materialCouponModal.js`
 * `src/ui/cuttingSheetModal.js`

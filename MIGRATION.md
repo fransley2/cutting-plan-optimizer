@@ -46,6 +46,6 @@ Ao migrar uma função:
 | Impressão tabular                               |            Pendente | `src/reports/printTabular.js`                   | Relatório separado                                         |
 | Cutting Sheet                                   |            Pendente | `src/reports/printCuttingSheet.js`              | Relatório separado                                         |
 | Pro-style report                                |            Pendente | `src/reports/printPro.js`                       | Relatório separado                                         |
-| Geração de etiquetas                            |            Pendente | `src/reports/labels.js`                         | Reaproveitar dados da solução                              |
+| Geração de etiquetas                            |            Migrado | `src/reports/labels.js`                         | Etiquetas físicas por peça em templates Pimaco A4 e Carta selecionáveis |
 | i18n EN/PT/IT/FR                                |            Pendente | `src/i18n/translations.js`                      | Confirmar necessidade real antes                           |
 | Toggle labels/cor/fonte                         |            Pendente | `src/ui/results.js`                             | Passar opções para renderização                            |

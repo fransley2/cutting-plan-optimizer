@@ -6,6 +6,7 @@ const STORE_NAME = 'offcuts';
 export const OFFCUT_STATUS = Object.freeze({
   DRAFT: 'draft',
   REUSABLE: 'reusable',
+  PENDING_RMV: 'pending_rmv',
   RETURNED_TO_STOCK: 'returned_to_stock',
   SCRAP: 'scrap',
   CANCELLED: 'cancelled',
@@ -32,10 +33,11 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function normalizeOffcut(input = {}, existing = null) {
+export function normalizeOffcut(input = {}, existing = null) {
   return {
     id: text(input.id) || existing?.id || createId(),
     projectId: text(input.projectId),
+    workpackId: text(input.workpackId),
     parentInventoryItemId: text(input.parentInventoryItemId),
     newInventoryItemId: text(input.newInventoryItemId),
     cuttingSheetId: text(input.cuttingSheetId),
@@ -58,6 +60,7 @@ function normalizeOffcut(input = {}, existing = null) {
 function matchesFilters(record, filters = {}) {
   const fields = [
     'projectId',
+    'workpackId',
     'parentInventoryItemId',
     'cuttingSheetId',
     'returnMaterialVoucherId',
@@ -68,13 +71,6 @@ function matchesFilters(record, filters = {}) {
     'disposition',
   ];
   return fields.every((field) => filters[field] == null || record[field] === String(filters[field]));
-}
-
-export async function createOffcut(input) {
-  const db = await getDB();
-  const record = normalizeOffcut(input);
-  await idbPut(db, STORE_NAME, record);
-  return record;
 }
 
 export async function saveOffcut(input) {
@@ -95,11 +91,6 @@ export async function getOffcut(id) {
   return idbGet(db, STORE_NAME, id);
 }
 
-export async function getOffcuts(filters = {}) {
-  const records = await getAllOffcuts();
-  return records.filter((record) => matchesFilters(record, filters));
-}
-
 export async function updateOffcut(id, patch) {
   const current = await getOffcut(id);
   if (!current) return null;
@@ -110,16 +101,4 @@ export async function deleteOffcut(id) {
   if (!id) return undefined;
   const db = await getDB();
   return idbDelete(db, STORE_NAME, id);
-}
-
-export async function deleteOffcuts(ids = []) {
-  const uniqueIds = [...new Set(Array.isArray(ids) ? ids.filter(Boolean) : [])];
-  if (!uniqueIds.length) return [];
-  await Promise.all(uniqueIds.map((id) => deleteOffcut(id)));
-  return uniqueIds;
-}
-
-export async function clearOffcuts() {
-  const db = await getDB();
-  return idbClear(db, STORE_NAME);
 }

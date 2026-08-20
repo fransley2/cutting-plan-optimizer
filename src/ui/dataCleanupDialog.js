@@ -2,6 +2,10 @@ import { clearMtoData } from '../data/mtoDB.js';
 import { clearInventoryItems } from '../data/inventoryDB.js';
 import { clearAuditEvents } from '../data/auditLog.js';
 import { clearStockMovements } from '../data/stockMovements.js';
+import { clearWorkpackLinks } from '../data/workpackLinks.js';
+import { clearMaterialReservations } from '../data/materialReservations.js';
+import { clearMaterialTransformations } from '../data/materialTransformations.js';
+import { clearTaskSheets } from '../data/taskSheets.js';
 import { openModal, closeModal } from './modal.js';
 import { showToast } from './toast.js';
 
@@ -17,6 +21,10 @@ const CLEANUP_OPTIONS = [
   { id: 'inventory', label: 'Inventory', clear: clearInventoryItems },
   { id: 'audit', label: 'Audit log', clear: clearAuditEvents },
   { id: 'stockMovements', label: 'Stock movements', clear: clearStockMovements },
+  { id: 'workpackLinks', label: 'Workpack links', clear: clearWorkpackLinks },
+  { id: 'materialReservations', label: 'Material reservations', clear: clearMaterialReservations },
+  { id: 'materialTransformations', label: 'Material genealogy', clear: clearMaterialTransformations },
+  { id: 'taskSheets', label: 'Task Sheets', clear: clearTaskSheets },
 ];
 
 export async function openDataCleanupDialog(options = {}) {

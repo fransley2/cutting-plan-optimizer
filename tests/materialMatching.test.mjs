@@ -26,13 +26,13 @@ const baseMto = {
 
 const baseStock = {
   id: 'stock-1',
-  material: 'DNV 25Cr',
+  materialGrade: 'DNV 25Cr',
   identCode: 'PP-SD-168-19',
   type: 'Pipe',
-  length: 6100,
+  lengthMm: 6100,
   status: 'available',
   traceability: 'TR-001',
-  heat: 'H-001',
+  heatNo: 'H-001',
 };
 
 function run() {
@@ -49,11 +49,11 @@ function run() {
   assert.equal(exactCandidate.profileCompatible, true);
   assert.equal(exactCandidate.lengthEnough, true);
 
-  const shortCandidate = evaluateStockCandidate(baseMto, { ...baseStock, length: 1000 });
+  const shortCandidate = evaluateStockCandidate(baseMto, { ...baseStock, lengthMm: 1000 });
   assert.equal(shortCandidate.status, STOCK_MATCH_STATUS.REJECTED);
   assert.ok(shortCandidate.reasons.includes('Insufficient length'));
 
-  const mismatchCandidate = evaluateStockCandidate(baseMto, { ...baseStock, material: 'A36' });
+  const mismatchCandidate = evaluateStockCandidate(baseMto, { ...baseStock, materialGrade: 'A36' });
   assert.equal(mismatchCandidate.status, STOCK_MATCH_STATUS.REJECTED);
   assert.ok(mismatchCandidate.reasons.includes('Material mismatch'));
 
@@ -80,13 +80,13 @@ function run() {
 
   const partialCoverage = analyzeMaterialCoverage(
     [{ ...baseMto, qty: 3 }],
-    [{ ...baseStock, length: 3000 }],
+    [{ ...baseStock, lengthMm: 3000 }],
   );
   assert.equal(partialCoverage.matchedGroups[0].coverageStatus, COVERAGE_STATUS.PARTIAL);
   assert.equal(partialCoverage.shortages.length, 1);
   assert.ok(Math.abs(partialCoverage.shortages[0].missingLength - 2228.07) < 0.0001);
 
-  const noStockCoverage = analyzeMaterialCoverage([baseMto], [{ ...baseStock, material: 'A36' }]);
+  const noStockCoverage = analyzeMaterialCoverage([baseMto], [{ ...baseStock, materialGrade: 'A36' }]);
   assert.equal(noStockCoverage.matchedGroups[0].coverageStatus, COVERAGE_STATUS.NO_STOCK);
   assert.equal(noStockCoverage.shortages.length, 1);
 

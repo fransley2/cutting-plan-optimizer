@@ -1,14 +1,26 @@
-// Tabela editável reutilizável. No arquivo original, "Available Stock" e
-// "Required Parts" tinham ~80 linhas cada de HTML quase idêntico
-// (createStockRow / createPartRow), só variando as colunas.
-// Aqui isso vira UMA implementação + duas listas de configuração (colunas).
-//
-// Uso:
-//   const stockTable = createDataTable(tbody, STOCK_COLUMNS);
-//   stockTable.addRow({ po: 'PO123', length: 6000, ... });
-//   stockTable.getRows() -> [{ po, item, qty, length, ... }]
+// Tabela editável reutilizável para o Planner. Mantém a edição inline,
+// duplicação, exclusão e colagem tabular sem interpolar valores no HTML.
 
-export function createDataTable(tbody, columns) {
+export function createDataTable(tbody, columns, options = {}) {
+  function configureColumnWidths() {
+    const table = tbody.closest('table');
+    if (!table) return;
+    table.querySelector(':scope > colgroup.planner-column-widths')?.remove();
+
+    const colgroup = document.createElement('colgroup');
+    colgroup.className = 'planner-column-widths';
+    columns.forEach((column) => {
+      const col = document.createElement('col');
+      if (column.width) col.style.width = column.width;
+      colgroup.append(col);
+    });
+    const actionsCol = document.createElement('col');
+    actionsCol.style.width = options.enableSobremetal ? '108px' : '72px';
+    colgroup.append(actionsCol);
+    table.insertBefore(colgroup, table.firstChild);
+  }
+
+  configureColumnWidths();
 
   function parseNumberInput(rawValue, col) {
     const parsedValue = col.isInt ? parseInt(rawValue, 10) : parseFloat(rawValue);
@@ -24,63 +36,117 @@ export function createDataTable(tbody, columns) {
     return valid;
   }
 
-  function buildCell(col, value) {
+  function createEditor(col, value) {
+    const editor = document.createElement(col.type === 'select' ? 'select' : 'input');
+    editor.dataset.key = col.key;
+    editor.classList.add('planner-cell-editor');
+    if (col.type === 'number') editor.classList.add('planner-cell-editor--number');
+
     if (col.type === 'select') {
-      const opts = col.options.map(o => `<option value="${o.value}" ${String(o.value) === String(value ?? col.default) ? 'selected' : ''}>${o.label}</option>`).join('');
-      return `<select data-key="${col.key}">${opts}</select>`;
+      const selectedValue = String(value ?? col.default ?? '');
+      col.options.forEach((optionData) => {
+        const option = document.createElement('option');
+        option.value = optionData.value;
+        option.textContent = optionData.label;
+        option.selected = String(optionData.value) === selectedValue;
+        editor.append(option);
+      });
+      return editor;
     }
-    const inputType = col.type === 'number' ? 'number' : 'text';
-    const min = col.type === 'number' ? 'min="0"' : '';
-    const list = col.list ? `list="${col.list}"` : '';
-    return `<input type="${inputType}" data-key="${col.key}" value="${value ?? col.default ?? ''}" ${min} ${list} style="${col.width ? `width:${col.width}` : ''}">`;
+
+    editor.type = col.type === 'number' ? 'number' : 'text';
+    editor.value = value ?? col.default ?? '';
+    if (col.type === 'number') editor.min = '0';
+    if (col.list) editor.setAttribute('list', col.list);
+    return editor;
+  }
+
+  function createActionButton(className, icon, label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `planner-row-action ${className}`;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    const symbol = document.createElement('span');
+    symbol.className = 'material-symbols-outlined';
+    symbol.setAttribute('aria-hidden', 'true');
+    symbol.textContent = icon;
+    button.append(symbol);
+    return button;
+  }
+
+  function setSobremetalState(tr, input = {}, { notify = false } = {}) {
+    const hasSobremetal = input.hasSobremetal === true;
+    const entered = Number(input.sobremetalMm);
+    const sobremetalMm = hasSobremetal && Number.isFinite(entered) && entered >= 0 ? entered : (hasSobremetal ? 500 : 0);
+    tr.dataset.hasSobremetal = String(hasSobremetal);
+    tr.dataset.sobremetalMm = String(sobremetalMm);
+    const action = tr.querySelector('.btn-sobremetal');
+    if (action) {
+      action.classList.toggle('active', hasSobremetal);
+      action.title = hasSobremetal ? `Sobremetal: ${sobremetalMm} mm` : 'Configurar sobremetal';
+      action.setAttribute('aria-label', action.title);
+    }
+    if (notify) tr.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function addRow(data = {}) {
     const tr = document.createElement('tr');
-    const cells = columns.map(col => `<td>${buildCell(col, data[col.key])}</td>`).join('');
-    tr.innerHTML = `${cells}<td class="row-actions">
-        <button class="btn-copy" title="Duplicar linha">⧉</button>
-        <button class="btn-remove" title="Excluir linha">✕</button>
-      </td>`;
-    columns.filter(col => col.type === 'number').forEach(col => {
-      const input = tr.querySelector(`[data-key="${col.key}"]`);
-      input?.addEventListener('blur', () => syncNumberInputValidation(input, col));
+    tr.className = 'planner-data-row';
+    columns.forEach((col) => {
+      const td = document.createElement('td');
+      td.dataset.column = col.key;
+      if (col.align === 'end' || col.type === 'number') td.classList.add('planner-cell--number');
+      const editor = createEditor(col, data[col.key]);
+      if (col.type === 'number') editor.addEventListener('blur', () => syncNumberInputValidation(editor, col));
+      td.append(editor);
+      tr.append(td);
     });
-    tbody.appendChild(tr);
+
+    const actionsCell = document.createElement('td');
+    actionsCell.className = 'row-actions planner-row-actions';
+    actionsCell.append(createActionButton('btn-copy', 'content_copy', 'Duplicar linha'));
+    if (options.enableSobremetal) actionsCell.append(createActionButton('btn-sobremetal', 'straighten', 'Configurar sobremetal'));
+    actionsCell.append(createActionButton('btn-remove', 'delete', 'Excluir linha'));
+    tr.append(actionsCell);
+    if (options.enableSobremetal) setSobremetalState(tr, data);
+    tbody.append(tr);
     return tr;
   }
 
   function readRow(tr, { validate = true } = {}) {
     const row = {};
     let valid = true;
-    columns.forEach(col => {
-      const el = tr.querySelector(`[data-key="${col.key}"]`);
-      const rawValue = el.value;
+    columns.forEach((col) => {
+      const editor = tr.querySelector(`[data-key="${col.key}"]`);
+      const rawValue = editor?.value ?? '';
       let value = rawValue;
       if (col.type === 'number') {
         const { parsedValue, valid: numericValid } = parseNumberInput(rawValue, col);
         if (!numericValid) {
           if (validate) {
-            el.classList.add('input-error');
+            editor?.classList.add('input-error');
             valid = false;
           }
           value = rawValue === '' ? '' : rawValue;
         } else {
           value = parsedValue;
-          if (validate) el.classList.remove('input-error');
+          if (validate) editor?.classList.remove('input-error');
         }
       }
       row[col.key] = value;
     });
+    if (options.enableSobremetal) {
+      row.hasSobremetal = tr.dataset.hasSobremetal === 'true';
+      row.sobremetalMm = row.hasSobremetal ? Number(tr.dataset.sobremetalMm || 500) : 0;
+    }
     row.__valid = valid;
     return row;
   }
 
-  // Expande cada linha em N itens conforme a coluna `qty` (mesma regra do original:
-  // uma peça/barra com Qty=3 vira 3 unidades individuais para o algoritmo de alocação).
   function getRows({ expandQty = true, includeInvalid = false } = {}) {
     const result = [];
-    [...tbody.querySelectorAll('tr')].forEach(tr => {
+    [...tbody.querySelectorAll('tr')].forEach((tr) => {
       const row = readRow(tr, { validate: !includeInvalid });
       if (!includeInvalid && !row.__valid) return;
       const { __valid, ...cleanRow } = row;
@@ -89,55 +155,55 @@ export function createDataTable(tbody, columns) {
         return;
       }
       const qty = Number.isFinite(Number(cleanRow.qty)) && Number(cleanRow.qty) > 0 ? Number(cleanRow.qty) : 1;
-      for (let i = 0; i < qty; i++) result.push({ ...cleanRow });
+      for (let index = 0; index < qty; index += 1) result.push({ ...cleanRow });
     });
     return result;
   }
 
   function validate() {
-    let allValid = true;
-    [...tbody.querySelectorAll('tr')].forEach(tr => { if (!readRow(tr).__valid) allValid = false; });
-    return allValid;
+    return [...tbody.querySelectorAll('tr')].every((tr) => readRow(tr).__valid);
   }
 
-  tbody.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    const tr = btn.closest('tr');
-    if (btn.classList.contains('btn-remove')) tr.remove();
-    if (btn.classList.contains('btn-copy')) {
-      const data = readRow(tr);
-      tr.insertAdjacentElement('afterend', addRow(data) && tr.nextElementSibling);
+  tbody.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    const tr = button.closest('tr');
+    if (!tr) return;
+    if (button.classList.contains('btn-remove')) tr.remove();
+    if (button.classList.contains('btn-sobremetal')) {
+      const { __valid, ...row } = readRow(tr, { validate: false });
+      options.onConfigureSobremetal?.({
+        row,
+        update: (values) => setSobremetalState(tr, values, { notify: true }),
+      });
+    }
+    if (button.classList.contains('btn-copy')) {
+      const duplicate = addRow(readRow(tr));
+      tr.insertAdjacentElement('afterend', duplicate);
     }
   });
 
-  // Colar de planilha (Excel/Sheets): tab-separated, expande linhas conforme necessário.
-  tbody.addEventListener('paste', (e) => {
-    const text = (e.clipboardData || window.clipboardData).getData('text');
+  tbody.addEventListener('paste', (event) => {
+    const text = (event.clipboardData || window.clipboardData).getData('text');
     if (!text.includes('\t') && !text.includes('\n')) return;
-    e.preventDefault();
-
     const active = document.activeElement;
     if (!tbody.contains(active)) return;
     const startRow = active.closest('tr');
-    const startColIndex = columns.findIndex(c => c.key === active.dataset.key);
+    const startColIndex = columns.findIndex((column) => column.key === active.dataset.key);
+    if (!startRow || startColIndex < 0) return;
 
-    const rows = text.split(/\r?\n/).filter(r => r.trim() !== '');
+    event.preventDefault();
+    const rows = text.split(/\r?\n/).filter((row) => row.trim() !== '');
     let currentRow = startRow;
-    rows.forEach((rowStr, rowIdx) => {
-      if (!currentRow) return;
-      rowStr.split('\t').forEach((cellStr, cellIdx) => {
-        const col = columns[startColIndex + cellIdx];
-        if (!col) return;
-        const input = currentRow.querySelector(`[data-key="${col.key}"]`);
-        if (input) {
-          input.value = cellStr.trim();
-          if (col.type === 'number') syncNumberInputValidation(input, col);
-        }
+    rows.forEach((rowText, rowIndex) => {
+      rowText.split('\t').forEach((cellText, cellIndex) => {
+        const column = columns[startColIndex + cellIndex];
+        const editor = currentRow?.querySelector(`[data-key="${column?.key}"]`);
+        if (!column || !editor) return;
+        editor.value = cellText.trim();
+        if (column.type === 'number') syncNumberInputValidation(editor, column);
       });
-      if (rowIdx < rows.length - 1) {
-        currentRow = currentRow.nextElementSibling || addRow();
-      }
+      if (rowIndex < rows.length - 1) currentRow = currentRow.nextElementSibling || addRow();
     });
   });
 

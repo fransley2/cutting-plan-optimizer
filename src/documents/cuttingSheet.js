@@ -1,3 +1,6 @@
+import { pieceEffectiveLengthMm, pieceNominalLengthMm, pieceSobremetalMm } from '../core/cuttingSheetPlanning.js';
+import { operationalWorkpackValue } from '../core/workpackRelations.js';
+
 const COLUMNS = Object.freeze([
   { key: 'cuttingSheetNumber', label: 'Cutting Sheet No.' },
   { key: 'materialCouponNumber', label: 'Material Coupon No.' },
@@ -13,6 +16,7 @@ const COLUMNS = Object.freeze([
   { key: 'mark', label: 'Mark' },
   { key: 'pos', label: 'POS' },
   { key: 'cutLength', label: 'Cut Length' },
+  { key: 'sobremetalMm', label: 'Sobremetal [mm]' },
   { key: 'totalNested', label: 'Total Nested' },
   { key: 'spareOffcut', label: 'Spare / Offcut' },
 ]);
@@ -57,7 +61,7 @@ function getPackageMetadata(cuttingPackage = {}) {
     project: safeText(pickFirst(metadata.project, cuttingPackage.project, cuttingPackage.projectData?.projectName)),
     client: safeText(pickFirst(metadata.client, cuttingPackage.client)),
     equipment: safeText(pickFirst(metadata.equipment, cuttingPackage.equipment, cuttingPackage.projectData?.equipment)),
-    workpack: safeText(pickFirst(metadata.workpack, cuttingPackage.workpack)),
+    workpack: operationalWorkpackValue(pickFirst(metadata.workpack, cuttingPackage.workpack)),
     destination: safeText(pickFirst(metadata.destination, cuttingPackage.destination)),
     date: safeText(pickFirst(metadata.date, cuttingPackage.date, cuttingPackage.createdAt)),
     materialCouponNumber: safeText(pickFirst(metadata.materialCouponNumber, cuttingPackage.materialCouponNumber, cuttingPackage.materialCouponNo)),
@@ -90,11 +94,11 @@ function stockLength(bar = {}) {
 }
 
 function cutLength(piece = {}) {
-  return safeNumber(pickFirst(piece.cutLength, piece.cutLengthMm, piece.length, piece.lengthMm));
+  return pieceNominalLengthMm(piece);
 }
 
 function totalNestedLength(bar = {}) {
-  return (Array.isArray(bar.pieces) ? bar.pieces : []).reduce((sum, piece) => sum + cutLength(piece), 0);
+  return (Array.isArray(bar.pieces) ? bar.pieces : []).reduce((sum, piece) => sum + pieceEffectiveLengthMm(piece), 0);
 }
 
 function spareOffcut(bar = {}, totalNested = 0) {
@@ -111,17 +115,18 @@ function rowFromPiece(bar = {}, piece = {}, index = 0, metadata = {}) {
     cuttingSheetNumber: metadata.cuttingSheetNumber,
     materialCouponNumber: metadata.materialCouponNumber,
     barNumber: barNumber(bar, index),
-    po: safeText(pickFirst(stock.po, stock.purchaseOrder, stock.poNumber, bar.po, bar.purchaseOrder, bar.poNumber)),
-    poItem: safeText(pickFirst(stock.item, stock.poItem, stock.itemPo, bar.item, bar.poItem, bar.itemPo)),
+    po: safeText(pickFirst(stock.po, bar.po, bar.purchaseOrder)),
+    poItem: safeText(pickFirst(stock.poItem, bar.poItem, bar.itemPo)),
     traceability: safeText(pickFirst(stock.traceability, stock.trace, stock.traceNo, bar.traceability, bar.trace, bar.traceNo)),
-    description: safeText(pickFirst(stock.description, stock.desc, bar.description, bar.desc)),
-    materialGrade: safeText(pickFirst(piece.material, piece.materialGrade, piece.grade, stock.material, stock.materialGrade, stock.grade, bar.material, bar.materialGrade, bar.grade)),
-    heat: safeText(pickFirst(stock.heat, stock.heatNumber, bar.heat, bar.heatNumber)),
+    description: safeText(pickFirst(stock.materialDescription, bar.materialDescription, bar.description)),
+    materialGrade: safeText(pickFirst(piece.material, piece.materialGrade, piece.grade, stock.materialGrade, bar.material, bar.materialGrade, bar.grade)),
+    heat: safeText(pickFirst(stock.heatNo, bar.heatNo)),
     stockLength: stockLength(bar),
     drawingRef: safeText(pickFirst(piece.drawingRef, piece.drawing, piece.dwgNumber)),
     mark: safeText(piece.mark),
     pos: safeText(pickFirst(piece.pos, piece.position)),
     cutLength: cutLength(piece),
+    sobremetalMm: pieceSobremetalMm(piece),
     totalNested,
     spareOffcut: spareOffcut(bar, totalNested),
   };

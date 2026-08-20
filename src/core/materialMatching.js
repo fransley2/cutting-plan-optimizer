@@ -60,15 +60,15 @@ function getTraceability(item) {
 }
 
 function getHeat(item) {
-  return firstValue(item, ['heat', 'Heat', 'heatNumber', 'heat_number']);
+  return firstValue(item, ['heatNo', 'heat', 'Heat']);
 }
 
 function getGrade(item) {
-  return firstValue(item, ['material', 'materialGrade', 'grade', 'Material', 'Grade']);
+  return firstValue(item, ['materialGrade', 'material', 'grade', 'Material', 'Grade']);
 }
 
 function getTypeProfileCategory(item) {
-  return firstValue(item, ['type', 'profile', 'category', 'description', 'Type', 'Profile', 'Category', 'Description']);
+  return firstValue(item, ['type', 'profile', 'category', 'materialDescription', 'description', 'Type', 'Profile', 'Category', 'Description']);
 }
 
 function getDimension(item) {
@@ -195,6 +195,9 @@ export function normalizeInventoryStatus(value) {
 
   const aliases = {
     'em estoque': 'available',
+    'n/a': 'available',
+    'n a': 'available',
+    na: 'available',
     available: 'available',
     reserved: 'reserved',
     reservado: 'reserved',
@@ -245,16 +248,7 @@ export function getMtoRequiredLength(item, settings = {}) {
 }
 
 export function getInventoryAvailableLength(item) {
-  return normalizeNumber(firstValue(item, [
-    'currentLength',
-    'availableLength',
-    'length',
-    'originalLength',
-    'comprimento',
-    'comp',
-    'Comp. (mm)',
-    'Length/mm',
-  ]));
+  return normalizeNumber(item?.lengthMm);
 }
 
 export function getMaterialKeyFromMto(item, settings = {}) {
@@ -309,7 +303,7 @@ export function areProfilesCompatible(mtoItem, inventoryItem, settings = {}) {
     inventoryItem?.type,
     inventoryItem?.profile,
     inventoryItem?.category,
-    inventoryItem?.description,
+    inventoryItem?.materialDescription,
   ].map(normalizeText).filter(Boolean);
 
   if (mtoDescriptors.length === 0 && inventoryDescriptors.length === 0) return true;

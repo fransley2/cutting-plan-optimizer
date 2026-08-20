@@ -1,30 +1,37 @@
 // Helper generico de IndexedDB. Nenhuma logica de negocio aqui: so
 // promisifica as transacoes para evitar duplicar boilerplate entre stores.
 
+import { showToast } from '../ui/toast.js';
+
 let dbPromise = null;
 
 export function openDatabase(name, version, upgrade) {
   if (dbPromise) return dbPromise;
 
-  dbPromise = new Promise((resolve, reject) => {
+  const openPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(name, version);
-    request.onupgradeneeded = (event) => upgrade(event.target.result, event.oldVersion);
+    request.onupgradeneeded = (event) => upgrade(event.target.result, event.oldVersion, event.target.transaction);
     request.onsuccess = (event) => {
       const db = event.target.result;
-      db.onversionchange = () => db.close();
+      db.onversionchange = () => {
+        // A schema change makes this connection stale; the next caller must open a new one.
+        db.close();
+        if (dbPromise === openPromise) dbPromise = null;
+      };
       resolve(db);
     };
     request.onblocked = () => {
-      dbPromise = null;
-      reject(new Error(`Feche outras abas do app para atualizar o banco "${name}".`));
+      // Keep this request cached and pending: it may still succeed after the older tab closes.
+      showToast('Outra aba deste app está aberta com uma versão anterior. Feche as outras abas do app para continuar.', 'warning');
     };
     request.onerror = () => {
-      dbPromise = null;
+      if (dbPromise === openPromise) dbPromise = null;
       reject(new Error(`Erro ao abrir o banco "${name}": ${request.error?.message || 'falha desconhecida'}.`));
     };
   });
 
-  return dbPromise;
+  dbPromise = openPromise;
+  return openPromise;
 }
 
 export function idbGetAll(db, storeName) {
@@ -67,5 +74,41 @@ export function idbClear(db, storeName) {
     tx.objectStore(storeName).clear();
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+export function idbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('IndexedDB request failed.'));
+  });
+}
+
+export function idbTransaction(db, storeNames, mode, operation) {
+  const names = [...new Set((Array.isArray(storeNames) ? storeNames : [storeNames]).filter(Boolean))];
+  if (!names.length) return Promise.reject(new Error('At least one IndexedDB store is required.'));
+  return new Promise((resolve, reject) => {
+    let result;
+    let operationError = null;
+    let transaction;
+    try {
+      transaction = db.transaction(names, mode);
+      const stores = Object.fromEntries(names.map((name) => [name, transaction.objectStore(name)]));
+      Promise.resolve(operation(stores, transaction)).then((value) => {
+        result = value;
+      }).catch((error) => {
+        operationError = error;
+        try { transaction.abort(); } catch { /* transaction already finished */ }
+      });
+    } catch (error) {
+      try { transaction?.abort(); } catch { /* transaction was not created or already finished */ }
+      reject(error);
+      return;
+    }
+    transaction.oncomplete = () => operationError
+      ? reject(operationError)
+      : resolve(result);
+    transaction.onabort = () => reject(operationError || transaction.error || new Error('IndexedDB transaction aborted.'));
+    transaction.onerror = () => reject(transaction.error || new Error('IndexedDB transaction failed.'));
   });
 }

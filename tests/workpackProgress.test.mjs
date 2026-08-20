@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { calculateWorkpackProgress } from '../src/core/workpackProgress.js';
+assert.equal(calculateWorkpackProgress({ status: 'COMPLETED' }).effectiveProgress, 100);
+assert.equal(calculateWorkpackProgress({ status: 'CANCELLED' }).effectiveProgress, 0);
+assert.equal(calculateWorkpackProgress({ status: 'PLANNED', operations: [{ status: 'COMPLETED' }, { status: 'IN_PROGRESS' }] }).calculatedProgress, 75);
+assert.equal(calculateWorkpackProgress({ status: 'ON_HOLD' }).calculatedProgress, 80);
+assert.equal(calculateWorkpackProgress({ status: 'DRAFT', manualProgress: 110, progressOverrideReason: 'approved' }).effectiveProgress, 100);
+assert.equal(calculateWorkpackProgress({ status: 'PLANNED', manualProgress: 0, progressOverrideReason: 'approved' }).effectiveProgress, 0);
+assert.equal(calculateWorkpackProgress({ status: 'PLANNED', manualProgress: 50, progressOverrideReason: '' }).effectiveProgress, 5);
+assert.equal(calculateWorkpackProgress({ status: 'PLANNED', manualProgress: null, progressOverrideReason: '' }).effectiveProgress, 5);
+console.log('workpack progress tests passed');

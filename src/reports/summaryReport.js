@@ -1,3 +1,5 @@
+import { normalizeReportHeader as normalizeSharedReportHeader } from '../data/appSettings.js';
+
 const SUMMARY_REPORT_CSS = `
 @page {
   margin: 12mm 10mm;
@@ -643,22 +645,9 @@ function formatReportDate(dateString, currentLang = 'pt-BR') {
   return `${day}/${month}/${year}`;
 }
 
-const DEFAULT_REPORT_HEADER = Object.freeze({
-  companyName: 'Saipem do Brasil',
-  subtitle: '',
-  documentTitle: 'Cutting Plan Report',
-  logoUrl: 'https://i.ibb.co/wZZQrZW0/Saipem-logo-300px.png',
-});
-
-function normalizeReportHeader(projectData = {}, reportHeader = {}) {
-  return {
-    ...DEFAULT_REPORT_HEADER,
-    ...reportHeader,
-    companyName: reportHeader.companyName || DEFAULT_REPORT_HEADER.companyName,
-    subtitle: reportHeader.subtitle || projectData.project || 'Projeto Nao Informado',
-    documentTitle: reportHeader.documentTitle || DEFAULT_REPORT_HEADER.documentTitle,
-    logoUrl: reportHeader.logoUrl || DEFAULT_REPORT_HEADER.logoUrl,
-  };
+function normalizeSummaryReportHeader(projectData = {}, reportHeader = {}) {
+  const header = normalizeSharedReportHeader(reportHeader);
+  return { ...header, subtitle: header.subtitle || projectData.project || 'Projeto Nao Informado' };
 }
 
 function signatureHtml(projectData = {}) {
@@ -693,7 +682,7 @@ export function openSummaryReport({
 
   const currentFontSize = Number(labelFontSizePt) || 9;
   const rootClass = isMonochrome ? 'summary-report-page report-monochrome' : 'summary-report-page';
-  const header = normalizeReportHeader(projectData, reportHeader);
+  const header = normalizeSummaryReportHeader(projectData, reportHeader);
   const reportContent = `<!DOCTYPE html>
 <html lang="${escapeHtml(currentLang)}">
 <head>
@@ -714,7 +703,7 @@ export function openSummaryReport({
       </div>
 
       <div class="summary-doc-title">
-        <h2>${escapeHtml(header.documentTitle)}</h2>
+        <h2>${escapeHtml(header.documentTitles.cuttingPlan)}</h2>
         <p>${escapeHtml(formatReportDate(projectData.date || projectData.reportDate, currentLang))}</p>
       </div>
     </header>
@@ -726,16 +715,29 @@ export function openSummaryReport({
 </body>
 </html>`;
 
+  printWindow.addEventListener('load', async () => {
+    try {
+      if (printWindow.document.fonts?.ready) await printWindow.document.fonts.ready;
+    } catch (error) {
+      console.warn('Summary report could not wait for document fonts.', error);
+    }
+    await Promise.all([...printWindow.document.images].map((image) => {
+      if (image.complete) return typeof image.decode === 'function' ? image.decode().catch(() => {}) : Promise.resolve();
+      return new Promise((resolve) => {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      });
+    }));
+    await new Promise((resolve) => printWindow.requestAnimationFrame(resolve));
+    await new Promise((resolve) => printWindow.requestAnimationFrame(resolve));
+    if (printWindow.closed) return;
+    printWindow.focus();
+    printWindow.print();
+  }, { once: true });
+
   printWindow.document.open();
   printWindow.document.write(reportContent);
   printWindow.document.close();
-
-  printWindow.onload = () => {
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 150);
-  };
 
   return true;
 }

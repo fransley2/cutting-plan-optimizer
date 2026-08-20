@@ -1,0 +1,4 @@
+Drawing;Revision;Mark;Position;Quantity;Description;Length/mm;Material
+DWG-MTO-DEC-001;A;MARK-SAME-001;10;4;Descrição base para mesma revisão;1000;S32750
+DWG-MTO-DEC-002;B;MARK-OLDER-001;20;2;Descrição base para revisão antiga;1500;A36
+DWG-MTO-DEC-003;A;MARK-UNKNOWN-001;30;3;Descrição base para revisão não comparável;2000;A106

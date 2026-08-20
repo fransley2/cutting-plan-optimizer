@@ -5,6 +5,8 @@ const STORE_NAME = 'returnMaterialVouchers';
 
 export const RMV_STATUS = Object.freeze({
   DRAFT: 'draft',
+  ISSUED: 'issued',
+  PARTIALLY_RECEIVED: 'partially_received',
   RETURNED: 'returned',
   CANCELLED: 'cancelled',
   CLOSED: 'closed',
@@ -30,7 +32,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function normalizeReturnMaterialVoucher(input = {}, existing = null) {
+function linesWithStableIds(lines, existingLines = []) {
+  return arrayValue(lines).map((line, index) => ({
+    ...(line && typeof line === 'object' ? structuredClone(line) : {}),
+    id: text(line?.id) || text(existingLines[index]?.id) || createId(),
+  }));
+}
+
+export function normalizeReturnMaterialVoucher(input = {}, existing = null) {
   return {
     id: text(input.id) || existing?.id || createId(),
     projectId: text(input.projectId),
@@ -38,20 +47,37 @@ function normalizeReturnMaterialVoucher(input = {}, existing = null) {
     status: text(input.status) || RMV_STATUS.DRAFT,
     cuttingSheetId: text(input.cuttingSheetId),
     materialCouponId: text(input.materialCouponId),
+    workpackId: text(input.workpackId),
+    date: text(input.date),
+    origin: text(input.origin),
+    destination: text(input.destination),
+    drawingReference: text(input.drawingReference),
+    reference: text(input.reference),
+    notes: text(input.notes),
+    issuedAt: text(input.issuedAt),
+    issuedBy: text(input.issuedBy),
     createdAt: text(input.createdAt) || existing?.createdAt || nowIso(),
     updatedAt: nowIso(),
     createdBy: text(input.createdBy),
     updatedBy: text(input.updatedBy),
     returnedAt: text(input.returnedAt),
     returnedBy: text(input.returnedBy),
-    returnedItems: arrayValue(input.returnedItems),
+    returnedItems: linesWithStableIds(input.returnedItems, existing?.returnedItems),
     metadata: objectValue(input.metadata),
   };
 }
 
 function matchesFilters(record, filters = {}) {
-  const fields = ['projectId', 'status', 'number', 'cuttingSheetId', 'materialCouponId'];
+  const fields = ['projectId', 'status', 'number', 'cuttingSheetId', 'materialCouponId', 'workpackId'];
   return fields.every((field) => filters[field] == null || record[field] === String(filters[field]));
+}
+
+function recordTimestamp(record = {}) {
+  for (const value of [record.date, record.issuedAt, record.updatedAt, record.createdAt]) {
+    const timestamp = Date.parse(value);
+    if (!Number.isNaN(timestamp)) return timestamp;
+  }
+  return 0;
 }
 
 export async function createReturnMaterialVoucher(input) {
@@ -81,29 +107,13 @@ export async function getReturnMaterialVoucher(id) {
 
 export async function getReturnMaterialVouchers(filters = {}) {
   const records = await getAllReturnMaterialVouchers();
-  return records.filter((record) => matchesFilters(record, filters));
-}
-
-export async function updateReturnMaterialVoucher(id, patch) {
-  const current = await getReturnMaterialVoucher(id);
-  if (!current) return null;
-  return saveReturnMaterialVoucher({ ...current, ...(patch || {}), id });
+  return records
+    .filter((record) => matchesFilters(record, filters))
+    .sort((a, b) => recordTimestamp(b) - recordTimestamp(a) || text(b.number).localeCompare(text(a.number)));
 }
 
 export async function deleteReturnMaterialVoucher(id) {
   if (!id) return undefined;
   const db = await getDB();
   return idbDelete(db, STORE_NAME, id);
-}
-
-export async function deleteReturnMaterialVouchers(ids = []) {
-  const uniqueIds = [...new Set(Array.isArray(ids) ? ids.filter(Boolean) : [])];
-  if (!uniqueIds.length) return [];
-  await Promise.all(uniqueIds.map((id) => deleteReturnMaterialVoucher(id)));
-  return uniqueIds;
-}
-
-export async function clearReturnMaterialVouchers() {
-  const db = await getDB();
-  return idbClear(db, STORE_NAME);
 }

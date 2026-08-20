@@ -82,11 +82,24 @@ const {
 
 const input = {
   projectId: 'PROJECT-1',
+  equipmentTypeId: 'TYPE-PLEM',
   code: 'EQ-001',
-  name: 'Pump Skid',
+  'Equipment Designation': 'NON INCORPORATE',
+  Structure_Clean: 'installation aid',
+  'Equipment Structure': 'support frame',
+  'Equipment - Type': 'plem module',
+  'Equipment Name': 'Pump Skid',
   clientTag: 'P-1001',
   discipline: 'Mechanical',
   description: 'Main pump skid',
+  theoreticalWeightKg: '1250.50',
+  photoUrl: 'data:image/png;base64,equipment-photo',
+  fieldLocation: 'kbd dw',
+  system: 'production jumper',
+  variant: 'type 1',
+  plannedQuantity: '3',
+  equipmentTags: '32-WJ-10-1020\n32-WJ-10-2020\n32-WJ-10-3010',
+  designDrawingNo: 'sr-101-30-u101-290158',
 };
 const before = JSON.stringify(input);
 const created = await createEquipment(input);
@@ -95,7 +108,23 @@ assert.equal(JSON.stringify(input), before, 'createEquipment mutated input');
 assert.ok(created.id, 'created equipment should have id');
 assert.equal(created.status, 'ACTIVE');
 assert.equal(created.projectId, 'PROJECT-1');
+assert.equal(created.equipmentTypeId, 'TYPE-PLEM');
 assert.equal(created.code, 'EQ-001');
+assert.equal(created.scopeType, 'NOT_INCORPORATED');
+assert.equal(created.equipmentClass, 'INSTALLATION AID');
+assert.equal(created.equipmentType, 'PLEM');
+assert.equal(created.equipmentStructure, 'SUPPORT FRAME');
+assert.equal(created.equipmentName, 'Pump Skid');
+assert.equal(created.name, 'Pump Skid');
+assert.equal(created.theoreticalWeightKg, 1250.5);
+assert.equal(created.photoUrl, 'data:image/png;base64,equipment-photo');
+assert.equal(created.fieldLocation, 'KBD DW');
+assert.equal(created.system, 'PRODUCTION');
+assert.equal(created.variant, 'TYPE 1');
+assert.equal(created.plannedQuantity, 3);
+assert.deepEqual(created.equipmentTags, ['32-WJ-10-1020', '32-WJ-10-2020', '32-WJ-10-3010']);
+assert.equal(created.clientTag, '32-WJ-10-1020');
+assert.equal(created.designDrawingNo, 'SR-101-30-U101-290158');
 assert.equal(typeof created.createdAt, 'string');
 assert.equal(typeof created.updatedAt, 'string');
 
@@ -109,6 +138,8 @@ const updated = await updateEquipment(created.id, {
 assert.equal(updated.name, 'Pump Skid Updated', 'updateEquipment should update name');
 assert.equal(updated.status, 'HOLD', 'updateEquipment should update status');
 assert.equal(updated.createdAt, created.createdAt, 'updateEquipment should preserve createdAt');
+assert.equal(updated.theoreticalWeightKg, created.theoreticalWeightKg, 'updateEquipment should preserve theoretical weight when it is not patched');
+assert.equal(updated.photoUrl, created.photoUrl, 'updateEquipment should preserve photoUrl when it is not patched');
 
 await createEquipment({
   projectId: 'PROJECT-2',
@@ -125,9 +156,18 @@ const inactive = await listEquipments({ status: 'INACTIVE' });
 assert.equal(inactive.length, 1, 'listEquipments should filter by status');
 assert.equal(inactive[0].code, 'EQ-002');
 
-assert.equal(findEquipmentMatch(await listEquipments({}), 'P-1001')?.id, created.id, 'findEquipmentMatch should match clientTag first');
-assert.equal(findEquipmentMatch(await listEquipments({}), 'pump skid updated')?.id, created.id, 'findEquipmentMatch should match name case-insensitively');
+assert.equal(findEquipmentMatch(await listEquipments({}), '32-wj-10-2020').equipment?.id, created.id, 'findEquipmentMatch should match any grouped tag');
+assert.equal(findEquipmentMatch(await listEquipments({}), 'pump skid updated').equipment?.id, created.id, 'findEquipmentMatch should match name case-insensitively');
 assert.equal((await findEquipmentByHint('EQ-002'))?.code, 'EQ-002', 'findEquipmentByHint should match code');
+
+const ambiguousMatch = findEquipmentMatch([
+  { id: 'AMBIGUOUS-1', equipmentTags: ['SHARED-TAG'], name: 'First' },
+  { id: 'AMBIGUOUS-2', equipmentTags: ['SHARED-TAG'], name: 'Second' },
+], 'shared-tag');
+assert.equal(ambiguousMatch.equipment, null, 'ambiguous matches must not select the first equipment');
+assert.equal(ambiguousMatch.ambiguous, true);
+assert.equal(ambiguousMatch.matchedBy, 'equipmentTags');
+assert.deepEqual(ambiguousMatch.matches.map((equipment) => equipment.id), ['AMBIGUOUS-1', 'AMBIGUOUS-2']);
 
 const invalidStatus = await createEquipment({
   projectId: 'PROJECT-3',
@@ -136,6 +176,54 @@ const invalidStatus = await createEquipment({
   status: 'bad-status',
 });
 assert.equal(invalidStatus.status, 'ACTIVE', 'invalid status should fall back to ACTIVE');
+
+const generatedIdentity = await createEquipment({
+  projectId: 'PROJECT-7',
+  fieldLocation: 'KBD DW',
+  equipmentType: 'Production Jumper',
+  variant: 'Type 2',
+  plannedQuantity: 3,
+  equipmentTags: ['32-WJ-10-1010', '32-WJ-10-2010', '32-WJ-10-3020'],
+});
+assert.equal(generatedIdentity.equipmentName, 'KBD DW · PRODUCTION · JUMPER · TYPE 2');
+assert.equal(generatedIdentity.equipmentType, 'JUMPER');
+assert.equal(generatedIdentity.system, 'PRODUCTION');
+assert.equal(generatedIdentity.name, generatedIdentity.equipmentName);
+assert.equal(generatedIdentity.code, 'KBD-DW-PRODUCTION-JUMPER-TYPE-2');
+assert.equal(generatedIdentity.status, 'ACTIVE');
+assert.equal(generatedIdentity.clientTag, '32-WJ-10-1010');
+
+const sameNameDifferentProject = await createEquipment({ projectId: 'PROJECT-4', name: 'Pump Skid Updated' });
+assert.equal(sameNameDifferentProject.projectId, 'PROJECT-4', 'same equipment name should be allowed in another project');
+
+await assert.rejects(
+  () => createEquipment({ projectId: 'PROJECT-1', name: '  pump skid updated  ' }),
+  (error) => error.code === 'EQUIPMENT_NAME_CONFLICT',
+  'equipment names should be unique per project, ignoring case and surrounding spaces',
+);
+
+await assert.rejects(
+  () => createEquipment({ projectId: 'PROJECT-1', name: 'Other equipment', code: ' eq-001 ' }),
+  (error) => error.code === 'EQUIPMENT_CODE_CONFLICT',
+  'populated codes should be unique per project',
+);
+
+await assert.rejects(
+  () => createEquipment({ projectId: 'PROJECT-1', name: 'Other tag equipment', clientTag: ' 32-wj-10-1020 ' }),
+  (error) => error.code === 'EQUIPMENT_CLIENT_TAG_CONFLICT',
+  'populated client tags should be unique per project',
+);
+
+const blankIdentifiersOne = await createEquipment({ projectId: 'PROJECT-5', name: 'Blank A', code: '', clientTag: '' });
+const blankIdentifiersTwo = await createEquipment({ projectId: 'PROJECT-5', name: 'Blank B', code: '', clientTag: '' });
+assert.ok(blankIdentifiersOne.id && blankIdentifiersTwo.id, 'blank code and client tag should not conflict');
+
+const selfUpdated = await updateEquipment(created.id, { code: 'EQ-001', clientTag: '32-WJ-10-1020' });
+assert.equal(selfUpdated.id, created.id, 'updating an equipment must not conflict with itself');
+
+const legacyField = await createEquipment({ projectId: 'PROJECT-6', name: 'Legacy Equipment', externalLegacyKey: 'LEGACY-42' });
+const legacyUpdated = await updateEquipment(legacyField.id, { discipline: 'Mechanical' });
+assert.equal(legacyUpdated.externalLegacyKey, 'LEGACY-42', 'unknown existing fields should survive an update');
 
 await deleteEquipment(created.id);
 assert.equal(await getEquipment(created.id), null, 'deleteEquipment should remove by id');

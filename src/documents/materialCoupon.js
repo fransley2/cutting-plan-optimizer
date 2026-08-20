@@ -25,11 +25,9 @@ export const MATERIAL_COUPON_EXTRACT_COLUMNS = Object.freeze([
   { key: 'materialProject', label: 'Mat. Project' },
   { key: 'totalSurfaceM2', label: 'Total Surf.\n[m2]' },
   { key: 'po', label: 'PO' },
-  { key: 'poItemNumber', label: 'PO Item #' },
   { key: 'mcIssuingResponsible', label: 'MC Issuing Responsible' },
   { key: 'materialDispatchResponsible', label: 'Material Dispatch Responsible' },
   { key: 'materialReceivingResponsible', label: 'Material Receiving Responsible' },
-  { key: 'remarksNotes', label: 'REMARKS / NOTES' },
   { key: 'classOfMaterial', label: 'Class of Material' },
   { key: 'discipline', label: 'Discipline' },
   { key: 'dispatchNfInvoice', label: 'Dispatch NF (invoice)' },
@@ -107,7 +105,7 @@ function headerFromCoupon(source = {}) {
     project: safeText(pickFirst(header.project, metadata.project, source.project, source.projectData?.projectName)),
     client: safeText(pickFirst(header.client, metadata.client, source.client)),
     scope: safeText(pickFirst(header.scope, metadata.scope, source.scope)),
-    workpack: safeText(pickFirst(header.workpack, metadata.workpack, source.workpack)),
+    workpack: operationalWorkpackValue(pickFirst(header.workpack, metadata.workpack, source.workpack)),
     docNumber: safeText(pickFirst(header.docNumber, header.docNo, metadata.docNumber)),
     docRevision: safeText(pickFirst(header.docRevision, metadata.docRevision)),
     docRevisionDate: safeText(pickFirst(header.docRevisionDate, metadata.docRevisionDate)),
@@ -118,6 +116,18 @@ function headerFromCoupon(source = {}) {
     issuing: safeText(pickFirst(responsible.issuing, metadata.preparedBy, metadata.issuingName)),
     dispatch: safeText(pickFirst(responsible.dispatch, metadata.dispatchName)),
     receiving: safeText(pickFirst(responsible.receiving, metadata.receivedBy, metadata.receivingName)),
+    dispatchSignature: {
+      name: safeText(pickFirst(responsible.dispatch, metadata.dispatchName)),
+      role: safeText(pickFirst(responsible.dispatchRole, metadata.dispatchRole, 'Project Warehouse')),
+      company: safeText(pickFirst(responsible.dispatchCompany, metadata.dispatchCompany)),
+      date: safeText(pickFirst(responsible.dispatchDate, metadata.dispatchDate)),
+    },
+    receivingSignature: {
+      name: safeText(pickFirst(responsible.receiving, metadata.receivedBy, metadata.receivingName)),
+      role: safeText(pickFirst(responsible.receivingRole, metadata.receivingRole, 'CTCO Yard/Subcontractor')),
+      company: safeText(pickFirst(responsible.receivingCompany, metadata.receivingCompany)),
+      date: safeText(pickFirst(responsible.receivingDate, metadata.receivingDate)),
+    },
   };
 }
 
@@ -136,65 +146,75 @@ function sourceLines(source = {}) {
   return candidates.find((items) => Array.isArray(items) && items.length) || [];
 }
 
+export function enrichMaterialCouponLines(lines = [], inventoryItems = []) {
+  const inventoryById = new Map();
+  toArray(inventoryItems).forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    [item.id, item.trace, item.traceability].forEach((value) => {
+      const key = safeText(value).trim();
+      if (key) inventoryById.set(key, item);
+    });
+  });
+
+  return toArray(lines).map((line) => {
+    if (!line || typeof line !== 'object') return line;
+    const inventoryId = safeText(pickFirst(line.inventoryItemId, line.traceability, line.trace)).trim();
+    const inventoryItem = inventoryById.get(inventoryId);
+    return inventoryItem ? { ...line, stockItem: inventoryItem } : { ...line };
+  });
+}
+
+export function mergeMaterialCouponInventoryDetails(lines = [], inventoryItems = []) {
+  return enrichMaterialCouponLines(lines, inventoryItems).map((line) => {
+    if (!line || typeof line !== 'object') return line;
+    const inventoryItem = line.stockItem || {};
+    return {
+      ...inventoryItem,
+      ...line,
+      lengthMm: pickFirst(line.originalLength, line.lengthMm, line.length, inventoryItem.lengthMm),
+    };
+  });
+}
+
 export function normalizeMaterialCouponLine(line = {}, header = {}) {
   const stock = line.stockItem || line.inventoryItem || line.stock || line;
-  const po = safeText(pickFirst(stock.po, stock.purchaseOrder, stock.poNumber, line.po));
-  const poItemNumber = safeText(pickFirst(stock.poItemNumber, stock.poItem, stock.item, stock.itemPo, line.poItemNumber, line.poItem, line.item));
   return {
     mcCode: safeText(header.mcCode),
     mcRevision: safeText(header.mcRevision),
     materialDestination: safeText(header.materialDestination),
     mcDate: safeText(header.mcDate),
-    serialNumber: safeText(pickFirst(stock.serialNumber, stock.serial, stock.sn, line.serialNumber)),
-    sapCode: safeText(pickFirst(stock.sapCode, stock.sap, stock.identCode, stock.IdentCode, line.sapCode)),
-    itemType: safeText(pickFirst(stock.itemType, stock.itemCategory, stock.category, stock.type, stock.profile, line.itemType)),
-    materialDescription: safeText(pickFirst(stock.materialDescription, stock.description, stock.Description, stock.desc, line.materialDescription)),
-    qty: safeText(pickFirst(stock.qty, stock.quantity, stock.Quantity, line.qty, 1)),
-    unit: safeText(pickFirst(stock.unit, stock.un, stock.Unit, line.unit, 'EA')),
-    diaMm: safeText(pickFirst(stock.diaMm, stock.dia, stock.diameter, stock.od, stock.diaOdMm, line.diaMm)),
-    thicknessMm: safeText(pickFirst(stock.thicknessMm, stock.thickness, stock.wallThickness, stock.wt, stock.thkMm, line.thicknessMm)),
+    serialNumber: safeText(pickFirst(stock.serialNumber, line.serialNumber)),
+    sapCode: safeText(pickFirst(stock.sapCode, stock.identCode, line.sapCode)),
+    itemType: safeText(pickFirst(stock.itemType, stock.category, line.itemType)),
+    materialDescription: safeText(pickFirst(stock.materialDescription, stock.description, line.materialDescription)),
+    qty: safeText(pickFirst(stock.qty, stock.quantity, line.qty, 1)),
+    unit: safeText(pickFirst(stock.unit, stock.uom, line.unit, 'EA')),
+    diaMm: safeText(pickFirst(stock.diaMm, stock.diameter, line.diaMm)),
+    thicknessMm: safeText(pickFirst(stock.thicknessMm, stock.thickness, line.thicknessMm)),
     widthMm: safeText(pickFirst(stock.widthMm, stock.width, line.widthMm)),
-    lengthMm: safeText(pickFirst(stock.lengthMm, stock.length, stock.currentLength, stock.originalLength, stock.cutLength, line.lengthMm)),
-    weightKg: safeText(pickFirst(stock.weightKg, stock.weight, stock['Weight/kg'], line.weightKg)),
-    materialGrade: safeText(pickFirst(stock.materialGrade, stock.matGrade, stock.grade, stock.material, line.materialGrade)),
-    traceability: safeText(pickFirst(stock.traceability, stock.heatTraceability, stock.trace, line.traceability)),
-    heatNo: safeText(pickFirst(stock.heatNo, stock.heatNumber, stock.heat, line.heatNo)),
+    lengthMm: safeText(pickFirst(stock.lengthMm, stock.originalLength, line.lengthMm)),
+    weightKg: safeText(pickFirst(stock.weightKg, stock.weight, line.weightKg)),
+    materialGrade: safeText(pickFirst(stock.materialGrade, stock.grade, line.materialGrade)),
+    traceability: safeText(pickFirst(stock.traceability, stock.trace, line.traceability)),
+    heatNo: safeText(pickFirst(stock.heatNo, stock.heat, line.heatNo)),
     mir: safeText(pickFirst(stock.mir, stock.MIR, line.mir)),
-    equipment: safeText(pickFirst(stock.equipment, stock.tag, stock.Tag, line.equipment, header.equipment)),
-    poItem: safeText(pickFirst(stock.poItem, poItemNumber, line.poItem)),
-    nfArrival: safeText(pickFirst(stock.nfArrival, stock.invoice, stock.nf, line.nfArrival)),
-    notes: safeText(pickFirst(stock.notes, stock.note, line.notes)),
-    project: safeText(header.project),
-    client: safeText(header.client),
-    destination: safeText(header.materialDestination),
-    date: safeText(header.mcDate),
-    materialCouponNumber: safeText(header.mcCode),
-    description: safeText(pickFirst(stock.materialDescription, stock.description, stock.Description, stock.desc, line.materialDescription)),
-    heat: safeText(pickFirst(stock.heatNo, stock.heatNumber, stock.heat, line.heatNo)),
-    quantity: safeText(pickFirst(stock.qty, stock.quantity, stock.Quantity, line.qty, 1)),
-    dimensions: [
-      safeText(pickFirst(stock.diaMm, stock.dia, stock.diameter, stock.od, stock.diaOdMm, line.diaMm)),
-      safeText(pickFirst(stock.thicknessMm, stock.thickness, stock.wallThickness, stock.wt, stock.thkMm, line.thicknessMm)),
-      safeText(pickFirst(stock.widthMm, stock.width, line.widthMm)),
-      safeText(pickFirst(stock.lengthMm, stock.length, stock.currentLength, stock.originalLength, stock.cutLength, line.lengthMm)),
-    ].filter(Boolean).join(' x '),
-    drawing: safeText(pickFirst(stock.drawing, stock.drawingRef, stock.dwgNumber, line.drawing)),
-    observations: safeText(pickFirst(stock.observations, stock.notes, stock.note, line.observations, header.notes)),
+    equipment: safeText(pickFirst(stock.equipment, line.equipment, header.equipment)),
+    poItem: safeText(pickFirst(stock.poItem, stock.item, line.poItem)),
+    nfArrival: safeText(pickFirst(stock.nfArrival, stock.invoice, line.nfArrival)),
+    notes: safeText(pickFirst(line.notes, line.note, stock.notes)),
     materialProject: safeText(pickFirst(stock.materialProject, stock.project, header.project)),
     totalSurfaceM2: safeText(pickFirst(stock.totalSurfaceM2, line.totalSurfaceM2)),
-    po,
-    poItemNumber,
+    po: safeText(pickFirst(stock.po, stock.purchaseOrder, line.po)),
     mcIssuingResponsible: safeText(pickFirst(line.mcIssuingResponsible, header.issuing)),
     materialDispatchResponsible: safeText(pickFirst(line.materialDispatchResponsible, header.dispatch)),
     materialReceivingResponsible: safeText(pickFirst(line.materialReceivingResponsible, header.receiving)),
-    remarksNotes: safeText(pickFirst(line.remarksNotes, stock.remarksNotes, header.remarks, header.notes)),
     classOfMaterial: safeText(pickFirst(line.classOfMaterial, stock.classOfMaterial, stock.materialClass)),
     discipline: safeText(pickFirst(line.discipline, stock.discipline)),
     dispatchNfInvoice: safeText(pickFirst(line.dispatchNfInvoice, stock.dispatchNfInvoice)),
     statusMaterial: safeText(pickFirst(line.statusMaterial, stock.statusMaterial, stock.status)),
     receivedDate: safeText(pickFirst(line.receivedDate, stock.receivedDate)),
     receivedSignature: safeText(pickFirst(line.receivedSignature, stock.receivedSignature)),
-    workpack: safeText(pickFirst(line.workpack, stock.workpack, header.workpack)),
+    workpack: operationalWorkpackValue(pickFirst(line.workpack, stock.workpack, header.workpack)),
     drawingUse: safeText(pickFirst(line.drawingUse, stock.drawingUse, stock.drawing, stock.dwgNumber)),
     uploadInFms: safeText(pickFirst(line.uploadInFms, stock.uploadInFms)),
     fmsMwcProcess: safeText(pickFirst(line.fmsMwcProcess, stock.fmsMwcProcess)),
@@ -216,7 +236,29 @@ export function buildMaterialCouponExtractRows(coupons = [], options = {}) {
     const header = { ...headerFromCoupon(coupon), ...(options.header || {}) };
     return sourceLines(coupon).map((line, index) => {
       const row = normalizeMaterialCouponLine(line, header);
-      return { ...row, serialNumber: row.serialNumber || String(index + 1) };
+      return { ...row, serialNumber: String(index + 1) };
+    });
+  });
+}
+
+export function buildMaterialCouponStockRows(coupons = []) {
+  const source = Array.isArray(coupons) ? coupons : [coupons];
+  return source.flatMap((coupon) => {
+    const header = headerFromCoupon(coupon);
+    return sourceLines(coupon).map((line) => {
+      const sourceLine = line && typeof line === 'object' ? line : {};
+      const stock = sourceLine.stockItem || sourceLine.inventoryItem || sourceLine.stock || sourceLine;
+      const normalized = normalizeMaterialCouponLine(sourceLine, header);
+      return {
+        po: normalized.po,
+        poItem: normalized.poItem,
+        qty: safeText(pickFirst(stock.qty, stock.quantity, sourceLine.qty)),
+        lengthMm: normalized.lengthMm,
+        materialGrade: normalized.materialGrade,
+        heatNo: normalized.heatNo,
+        materialDescription: normalized.materialDescription,
+        traceability: normalized.traceability,
+      };
     });
   });
 }
@@ -224,8 +266,8 @@ export function buildMaterialCouponExtractRows(coupons = [], options = {}) {
 function signatureFields(header = {}) {
   return [
     { role: 'PPC', label: 'Issued By', name: header.issuing || '', date: header.mcDate || '', signature: '' },
-    { role: 'Warehouse', label: 'Dispatched By', name: header.dispatch || '', date: '', signature: '' },
-    { role: 'Receiving', label: 'Received By', name: header.receiving || '', date: '', signature: '' },
+    { role: header.dispatchSignature?.role || 'Warehouse', label: 'Dispatched By', name: header.dispatchSignature?.name || '', company: header.dispatchSignature?.company || '', date: header.dispatchSignature?.date || '', signature: '' },
+    { role: header.receivingSignature?.role || 'Receiving', label: 'Received By', name: header.receivingSignature?.name || '', company: header.receivingSignature?.company || '', date: header.receivingSignature?.date || '', signature: '' },
   ];
 }
 
@@ -251,3 +293,4 @@ export function buildMaterialCouponDocument(couponOrPackage = {}, options = {}) 
     warnings,
   };
 }
+import { operationalWorkpackValue } from '../core/workpackRelations.js';

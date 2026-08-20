@@ -6,6 +6,7 @@ const LEGACY_STORE_NAME = 'auditEvents';
 
 export const AUDIT_EVENT_TYPES = Object.freeze({
   IMPORT_INVENTORY: 'IMPORT_INVENTORY',
+  RECEIVE_MATERIAL: 'RECEIVE_MATERIAL',
   IMPORT_MTO: 'IMPORT_MTO',
   MATCH_MTO: 'MATCH_MTO',
   RESERVE_STOCK: 'RESERVE_STOCK',
@@ -44,7 +45,7 @@ function normalizeTimestamp(value) {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
-function normalizeEvent(input = {}) {
+export function normalizeAuditEvent(input = {}) {
   return {
     id: text(input.id) || createId(),
     eventType: text(input.eventType),
@@ -103,7 +104,7 @@ export async function createAuditEvent(input) {
 
 export async function createAuditLogEntry(input) {
   const db = await getDB();
-  const event = normalizeEvent(input);
+  const event = normalizeAuditEvent(input);
   return idbPut(db, STORE_NAME, event);
 }
 
@@ -119,11 +120,6 @@ export async function getAllAuditLogEntries() {
 
 export async function getAuditEvents(filters = {}) {
   return getAuditLogEntries(filters);
-}
-
-export async function getAuditLogEntry(id) {
-  const db = await getDB();
-  return idbGet(db, STORE_NAME, id);
 }
 
 export async function getAuditLogEntries(filters = {}) {

@@ -9,6 +9,7 @@
  * as much as possible. Extra pages copy cells/styles/merges and may not copy
  * embedded images.
  */
+import { EXCEL_EXPORT_IDS, excelArgb, resolveExcelExportTheme } from '../data/excelReportTheme.js';
 
 export const TEMPLATE_TYPE_MATERIAL_COUPON = 'MATERIAL_COUPON';
 export const TEMPLATE_ID_MATERIAL_COUPON = 'material_coupon';
@@ -259,24 +260,24 @@ export function preencherCabecalhoMaterialCoupon(sheet, dadosCabecalho = {}) {
 export function preencherItemMaterialCoupon(sheet, rowNumber, item = {}, sequence = 1) {
   const values = {
     sequence,
-    sapCode: pickFirst(item.sapCode),
-    itemCategory: pickFirst(item.itemCategory, item.itemType, item.category),
-    description: pickFirst(item.materialDescription, item.description),
-    qty: pickFirst(item.qty, item.quantity),
-    unit: pickFirst(item.unit, item.un),
-    diaMm: pickFirst(item.diaMm, item.diameterMm, item.diameter),
-    thicknessMm: pickFirst(item.thicknessMm, item.thickness, item.thk),
-    widthMm: pickFirst(item.widthMm, item.width),
-    lengthMm: pickFirst(item.lengthMm, item.length),
-    weightKg: pickFirst(item.weightKg, item.weight),
-    materialGrade: pickFirst(item.materialGrade, item.material, item.grade),
-    traceability: pickFirst(item.traceability, item.trace, item.traceNo),
-    heatNo: pickFirst(item.heatNo, item.heat, item.heatNumber),
-    mir: pickFirst(item.mir),
-    equipment: pickFirst(item.equipment, item.equipmentName),
-    poItem: pickFirst(item.poItem, item.poItemNumber, item.item, item.itemPo),
-    nfArrival: pickFirst(item.nfArrival),
-    notes: pickFirst(item.notes, item.remarks),
+    sapCode: item.sapCode,
+    itemCategory: item.itemType,
+    description: item.materialDescription,
+    qty: item.qty,
+    unit: item.unit,
+    diaMm: item.diaMm,
+    thicknessMm: item.thicknessMm,
+    widthMm: item.widthMm,
+    lengthMm: item.lengthMm,
+    weightKg: item.weightKg,
+    materialGrade: item.materialGrade,
+    traceability: item.traceability,
+    heatNo: item.heatNo,
+    mir: item.mir,
+    equipment: item.equipment,
+    poItem: item.poItem,
+    nfArrival: item.nfArrival,
+    notes: item.notes,
   };
 
   Object.entries(MATERIAL_COUPON_ITEM_COLUMN_MAP).forEach(([key, column]) => {
@@ -290,16 +291,6 @@ export function preencherItemMaterialCoupon(sheet, rowNumber, item = {}, sequenc
   const row = sheet.getRow(rowNumber);
   const visualLines = calcularLinhasNecessarias(description);
   row.height = Math.max(row.height || 33, visualLines * DESCRIPTION_ROW_HEIGHT_PT);
-}
-
-export function inserirRodape(sheet, templateSheet, linhaDestinoInicio) {
-  copiarIntervaloCelulas(
-    templateSheet,
-    sheet,
-    FOOTER_TEMPLATE_START_ROW,
-    FOOTER_TEMPLATE_END_ROW,
-    linhaDestinoInicio
-  );
 }
 
 export function criarNovaPagina(workbook, templateSheet, pageNumber) {
@@ -334,7 +325,7 @@ export function planejarPaginasMaterialCoupon(items = []) {
   let currentPage = { pageNumber: 1, items: [], totalVisualLines: 0 };
 
   sourceItems.forEach((item, index) => {
-    const visualLines = calcularLinhasNecessarias(item?.materialDescription ?? item?.description);
+    const visualLines = calcularLinhasNecessarias(item?.materialDescription);
     if (visualLines > MAX_VISUAL_LINES_PER_PAGE) {
       warnings.push(`Item ${index + 1} exceeds the visual line limit and was kept on a dedicated page.`);
     }
@@ -378,6 +369,8 @@ export async function gerarMaterialCouponExcelBuffer({
   header = {},
   items = [],
   fileName = 'Material_Coupon.xlsx',
+  theme: themeOverride,
+  applyTheme = true,
 } = {}) {
   if (!templateArrayBuffer || Number(templateArrayBuffer.byteLength || 0) <= 0) {
     throw new Error('Template file is empty.');
@@ -393,6 +386,7 @@ export async function gerarMaterialCouponExcelBuffer({
   templateSheet.pageSetup.printArea = templateSheet.pageSetup.printArea || 'A1:U38';
 
   const plan = planejarPaginasMaterialCoupon(items);
+  const theme = resolveExcelExportTheme(EXCEL_EXPORT_IDS.MATERIAL_COUPON, themeOverride);
   const sheets = [];
   templateSheet.name = 'Page 1';
   limparAreaItensMaterialCoupon(templateSheet);
@@ -428,6 +422,23 @@ export async function gerarMaterialCouponExcelBuffer({
 
   plan.pages.forEach((_, index) => renderPage(index));
 
+  if (applyTheme !== false) {
+    sheets.forEach((sheet) => {
+      const headerRow = sheet.getRow(TABLE_HEADER_ROW);
+      headerRow.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+        if (columnNumber < 2 || columnNumber > 21) return;
+        cell.font = { ...(cell.font || {}), name: theme.fontFamily, bold: true, color: { argb: excelArgb(theme.palette.surface) } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: excelArgb(theme.palette.secondary) } };
+      });
+      for (let rowNumber = ITEM_START_ROW; rowNumber <= ITEM_END_ROW; rowNumber += 1) {
+        sheet.getRow(rowNumber).eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+          if (columnNumber < 2 || columnNumber > 21) return;
+          cell.font = { ...(cell.font || {}), name: theme.fontFamily };
+        });
+      }
+    });
+  }
+
   const output = await workbook.xlsx.writeBuffer();
   return {
     arrayBuffer: toArrayBuffer(output),
@@ -458,12 +469,16 @@ export async function gerarMaterialCouponExcel({
   items = [],
   fileName = 'Material_Coupon.xlsx',
   download = true,
+  theme,
+  applyTheme = true,
 } = {}) {
   const result = await gerarMaterialCouponExcelBuffer({
     templateArrayBuffer,
     header,
     items,
     fileName,
+    theme,
+    applyTheme,
   });
   if (download !== false) {
     downloadArrayBufferAsFile(result.arrayBuffer, result.fileName);

@@ -20,14 +20,14 @@ import {
 }
 
 {
-  const plan = planejarPaginasMaterialCoupon(Array.from({ length: 12 }, () => ({ description: 'Short' })));
+  const plan = planejarPaginasMaterialCoupon(Array.from({ length: 12 }, () => ({ materialDescription: 'Short' })));
   assert.equal(plan.pages.length, 1);
   assert.equal(plan.pages[0].items.length, 12);
   assert.equal(plan.warnings.length, 0);
 }
 
 {
-  const plan = planejarPaginasMaterialCoupon(Array.from({ length: 13 }, () => ({ description: 'Short' })));
+  const plan = planejarPaginasMaterialCoupon(Array.from({ length: 13 }, () => ({ materialDescription: 'Short' })));
   assert.equal(plan.pages.length, 2);
   assert.equal(plan.pages[0].items.length, 12);
   assert.equal(plan.pages[1].items.length, 1);
@@ -35,10 +35,10 @@ import {
 
 {
   const plan = planejarPaginasMaterialCoupon([
-    { description: 'Short' },
-    { description: 'A'.repeat(80) },
-    { description: 'Short' },
-    { description: 'Short' },
+    { materialDescription: 'Short' },
+    { materialDescription: 'A'.repeat(80) },
+    { materialDescription: 'Short' },
+    { materialDescription: 'Short' },
   ]);
   assert.equal(plan.pages.length, 1);
   assert.equal(plan.pages[0].totalVisualLines, 6);
@@ -46,8 +46,8 @@ import {
 
 {
   const plan = planejarPaginasMaterialCoupon([
-    { description: 'A'.repeat(500) },
-    { description: 'Short' },
+    { materialDescription: 'A'.repeat(500) },
+    { materialDescription: 'Short' },
   ]);
   assert.equal(plan.pages.length, 2);
   assert.equal(plan.pages[0].items.length, 1);

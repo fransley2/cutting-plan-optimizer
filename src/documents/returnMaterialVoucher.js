@@ -1,17 +1,22 @@
 const COLUMNS = Object.freeze([
-  { key: 'rmvNumber', label: 'RMV No.' },
-  { key: 'materialCouponNumber', label: 'Material Coupon Related' },
-  { key: 'cuttingSheetNumber', label: 'Cutting Sheet Related' },
-  { key: 'project', label: 'Project' },
+  { key: 'serialNumber', label: 'S/N.' },
+  { key: 'sapCode', label: 'SAP Code' },
+  { key: 'itemCategory', label: 'Item Category' },
   { key: 'description', label: 'Description' },
-  { key: 'materialGrade', label: 'Material / Grade' },
-  { key: 'heat', label: 'Heat / Plate' },
-  { key: 'po', label: 'PO' },
-  { key: 'poItem', label: 'Item' },
-  { key: 'returnedSize', label: 'Returned Material Size' },
   { key: 'quantity', label: 'Qty' },
-  { key: 'reason', label: 'Reason' },
-  { key: 'sketchSummary', label: 'Sketch / Textual Summary' },
+  { key: 'unit', label: 'Un.' },
+  { key: 'diaMm', label: 'Dia [mm]' },
+  { key: 'thicknessMm', label: 'Thickness [mm]' },
+  { key: 'widthMm', label: 'Width [mm]' },
+  { key: 'lengthMm', label: 'Length [mm]' },
+  { key: 'weightKg', label: 'Weight [Kg]' },
+  { key: 'condition', label: 'Condition' },
+  { key: 'traceability', label: 'Original Traceability' },
+  { key: 'heat', label: 'Heat No.' },
+  { key: 'materialCouponNumber', label: 'Ref. MC' },
+  { key: 'cuttingSheetNumber', label: 'Cutting Plan' },
+  { key: 'poItem', label: 'PO / Item' },
+  { key: 'notes', label: 'Notes' },
 ]);
 
 function safeText(value) {
@@ -53,9 +58,12 @@ function getPackageMetadata(cuttingPackage = {}) {
     project: safeText(pickFirst(metadata.project, cuttingPackage.project, cuttingPackage.projectData?.projectName)),
     client: safeText(pickFirst(metadata.client, cuttingPackage.client)),
     equipment: safeText(pickFirst(metadata.equipment, cuttingPackage.equipment, cuttingPackage.projectData?.equipment)),
-    workpack: safeText(pickFirst(metadata.workpack, cuttingPackage.workpack)),
-    destination: safeText(pickFirst(metadata.destination, cuttingPackage.destination)),
-    date: safeText(pickFirst(metadata.date, cuttingPackage.date, cuttingPackage.createdAt)),
+    workpack: operationalWorkpackValue(pickFirst(metadata.workpack, cuttingPackage.workpack)),
+    destination: safeText(pickFirst(cuttingPackage.destination, metadata.destination)),
+    origin: safeText(pickFirst(cuttingPackage.origin, metadata.origin)),
+    scope: safeText(pickFirst(metadata.scope, cuttingPackage.scope)),
+    drawingReference: safeText(pickFirst(cuttingPackage.drawingReference, metadata.drawingReference)),
+    date: safeText(pickFirst(cuttingPackage.date, metadata.date, cuttingPackage.createdAt)),
     materialCouponNumber: safeText(pickFirst(metadata.materialCouponNumber, cuttingPackage.materialCouponNumber, cuttingPackage.materialCouponNo)),
     cuttingSheetNumber: safeText(pickFirst(metadata.cuttingSheetNumber, cuttingPackage.cuttingSheetNumber, cuttingPackage.cuttingSheetNo)),
     rmvNumber: safeText(pickFirst(metadata.rmvNumber, cuttingPackage.rmvNumber, cuttingPackage.returnMaterialVoucherNo)),
@@ -63,6 +71,9 @@ function getPackageMetadata(cuttingPackage = {}) {
     receivedBy: safeText(metadata.receivedBy),
     approvedBy: safeText(metadata.approvedBy),
     observations: safeText(metadata.observations),
+    reference: safeText(pickFirst(cuttingPackage.reference, metadata.reference)),
+    notes: safeText(pickFirst(cuttingPackage.notes, metadata.notes, metadata.observations)),
+    dispatchBy: safeText(pickFirst(cuttingPackage.dispatchBy, metadata.dispatchBy)),
   };
 }
 
@@ -85,6 +96,7 @@ function offcutsFromBars(cuttingPackage = {}) {
 }
 
 function sourceItems(cuttingPackage = {}) {
+  if (Array.isArray(cuttingPackage.returnedItems) && cuttingPackage.returnedItems.length) return cuttingPackage.returnedItems;
   if (Array.isArray(cuttingPackage.returnedMaterials) && cuttingPackage.returnedMaterials.length) return cuttingPackage.returnedMaterials;
   if (Array.isArray(cuttingPackage.generatedOffcuts) && cuttingPackage.generatedOffcuts.length) return cuttingPackage.generatedOffcuts;
   return offcutsFromBars(cuttingPackage);
@@ -93,7 +105,7 @@ function sourceItems(cuttingPackage = {}) {
 function sketchSummary(item = {}) {
   const trace = safeText(pickFirst(item.parentTrace, item.parentTraceability, item.sourceTraceability, item.traceability, item.trace, item.traceNo));
   const size = formatDimensions(item);
-  const description = safeText(pickFirst(item.description, item.desc));
+  const description = safeText(item.materialDescription);
   if (trace && size) return `Offcut from trace ${trace}, length ${safeNumber(pickFirst(item.length, item.lengthMm, item.offcutLength, item.remaining))} mm`;
   if (description && size) return `Returned ${description} offcut ${size}`;
   if (size) return `Returned material offcut ${size}`;
@@ -103,27 +115,38 @@ function sketchSummary(item = {}) {
 function rowFromItem(item = {}, metadata = {}, packageReason = '') {
   return {
     rmvNumber: metadata.rmvNumber,
+    serialNumber: safeText(item.serialNumber),
+    sapCode: safeText(item.sapCode),
+    itemCategory: safeText(pickFirst(item.itemCategory, item.category)),
     materialCouponNumber: metadata.materialCouponNumber,
     cuttingSheetNumber: metadata.cuttingSheetNumber,
-    project: metadata.project,
-    description: safeText(pickFirst(item.description, item.desc)),
-    materialGrade: safeText(pickFirst(item.material, item.materialGrade, item.grade)),
-    heat: safeText(pickFirst(item.heat, item.heatNumber, item.plate)),
-    po: safeText(pickFirst(item.po, item.purchaseOrder, item.poNumber)),
-    poItem: safeText(pickFirst(item.item, item.poItem, item.itemPo)),
+    description: safeText(item.materialDescription),
+    materialGrade: safeText(pickFirst(item.materialGrade, item.grade)),
+    heat: safeText(pickFirst(item.heatNo, item.plate)),
+    po: safeText(pickFirst(item.po, item.purchaseOrder)),
+    poItem: [safeText(pickFirst(item.po, item.purchaseOrder)), safeText(pickFirst(item.poItem, item.itemPo))].filter(Boolean).join(' / '),
     returnedSize: formatDimensions(item),
     quantity: safeText(pickFirst(item.qty, item.quantity, 1)),
+    unit: safeText(item.unit) || 'EA',
+    diaMm: safeText(pickFirst(item.diaMm, item.diameterMm)),
+    thicknessMm: safeText(pickFirst(item.thicknessMm, item.thickness)),
+    widthMm: safeText(pickFirst(item.widthMm, item.width)),
+    lengthMm: safeText(pickFirst(item.lengthMm, item.length, item.remaining)),
+    weightKg: safeText(item.weightKg),
+    condition: safeText(item.condition) || 'GOOD',
+    traceability: safeText(pickFirst(item.parentTraceability, item.parentTrace, item.traceability)),
     reason: safeText(pickFirst(item.reason, item.scrapReason, packageReason, 'Returned offcut from nesting')),
     sketchSummary: sketchSummary(item),
+    notes: safeText(item.notes),
     status: safeText(item.status),
   };
 }
 
 function signatureFields(metadata = {}) {
   return [
-    { role: 'PPC', label: 'Returned By', name: metadata.preparedBy || '', date: metadata.date || '', signature: '' },
-    { role: 'Warehouse', label: 'Received By', name: metadata.receivedBy || '', date: '', signature: '' },
-    { role: 'Fiscal', label: 'Fiscal Check', name: metadata.approvedBy || '', date: '', signature: '' },
+    { role: 'PPC', label: 'MC Issuing Responsible', name: metadata.preparedBy || '', date: metadata.date || '', signature: '' },
+    { role: 'Dispatch', label: 'Material Dispatch Responsible', name: metadata.dispatchBy || '', date: '', signature: '' },
+    { role: 'Warehouse', label: 'Material Receiving Responsible', name: metadata.receivedBy || '', date: '', signature: '' },
   ];
 }
 
@@ -136,11 +159,11 @@ export function buildReturnMaterialVoucherDocument(cuttingPackage = {}, options 
   return {
     documentType: 'returnMaterialVoucher',
     title: 'Return Material Voucher',
-    documentNumber: safeText(pickFirst(options.rmvNumber, metadata.rmvNumber)),
+    documentNumber: safeText(pickFirst(options.rmvNumber, cuttingPackage.number, metadata.rmvNumber)),
     generatedAt: createGeneratedAt(options),
     metadata,
     columns: COLUMNS.map((column) => ({ ...column })),
-    rows: items.map((item) => rowFromItem(item, metadata, cuttingPackage.reason)),
+    rows: items.map((item, index) => ({ ...rowFromItem(item, metadata, cuttingPackage.reason), serialNumber: safeText(item.serialNumber) || String(index + 1) })),
     summary: {
       totalRows: items.length,
       totalQuantity: items.reduce((sum, item) => sum + safeNumber(pickFirst(item.qty, item.quantity, 1)), 0),
@@ -150,3 +173,4 @@ export function buildReturnMaterialVoucherDocument(cuttingPackage = {}, options 
     warnings,
   };
 }
+import { operationalWorkpackValue } from '../core/workpackRelations.js';

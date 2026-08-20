@@ -5,8 +5,10 @@ const STORE_NAME = 'stockMovements';
 
 export const STOCK_MOVEMENT_TYPES = Object.freeze({
   IMPORT_INVENTORY: 'IMPORT_INVENTORY',
+  RECEIVE_MATERIAL: 'RECEIVE_MATERIAL',
   RESERVE_STOCK: 'RESERVE_STOCK',
   RELEASE_RESERVATION: 'RELEASE_RESERVATION',
+  SPLIT_STOCK: 'SPLIT_STOCK',
   ISSUE_MATERIAL: 'ISSUE_MATERIAL',
   CONSUME_STOCK: 'CONSUME_STOCK',
   RETURN_OFFCUT: 'RETURN_OFFCUT',
@@ -40,7 +42,7 @@ function normalizeTimestamp(value) {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
-function normalizeMovement(input = {}) {
+export function normalizeStockMovement(input = {}) {
   return {
     id: text(input.id) || createId(),
     movementType: text(input.movementType),
@@ -92,7 +94,7 @@ function matchesFilters(movement, filters = {}) {
 
 export async function createStockMovement(input) {
   const db = await getDB();
-  const movement = normalizeMovement(input);
+  const movement = normalizeStockMovement(input);
   return idbPut(db, STORE_NAME, movement);
 }
 

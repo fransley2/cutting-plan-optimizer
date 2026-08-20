@@ -1,4 +1,5 @@
 import { readExcelFile } from './excel.js';
+import { parseLocalizedNumber } from '../core/utils.js';
 
 export const MTO_REQUIRED_FIELDS = Object.freeze([
   'drawing',
@@ -35,31 +36,52 @@ const ENGINEERING_FIELDS = [
 
 const FIELD_ALIASES = {
   free: ['Free'],
-  drawing: ['DrawingNº', 'DrawingN°', 'DrawingN�', 'DrawingNo', 'Drawing Nº', 'Drawing Number', 'Drawing', 'DWG', 'DWG Number', 'drawing', 'dwg', 'dwgNumber', 'dwg_number', 'drawingNumber', 'drawing_number'],
-  revision: ['Revision', 'revision', 'rev', 'REV', 'Rev.'],
-  mark: ['Mark', 'mark', 'MARK', 'partMark', 'part_mark'],
+  drawing: ['DrawingNº', 'DrawingN°', 'DrawingN�', 'DrawingNo', 'Drawing Nº', 'Drawing Number', 'Shop Drawing Name', 'Drawing', 'DWG', 'DWG Number', 'drawing', 'dwg', 'dwgNumber', 'dwg_number', 'drawingNumber', 'drawing_number'],
+  revision: ['Revision', 'Shop Drawing Revision Number', 'revision', 'rev', 'REV', 'Rev.'],
+  mark: ['Mark', 'SPOOL', 'mark', 'MARK', 'partMark', 'part_mark'],
   pos: ['Position', 'POS', 'pos', 'position', 'itemPos', 'item_pos'],
   qty: ['Quantity', 'Qty', 'QTY', 'Quantidade', 'qty', 'quantity', 'QUANTITY'],
-  description: ['Description', 'description', 'desc', 'DESC', 'itemDescription', 'item_description'],
-  cutLength: ['Length/mm', 'Length', 'Cut Length', 'Comp. Corte (mm)', 'comprimento', 'Comprimento', 'cutLength', 'cut_length', 'length', 'cutL', 'Cut L.'],
-  identCode: ['IdentCode', 'Ident Code', 'identCode', 'Code'],
-  tag: ['Tag'],
-  weightKg: ['Weight/kg'],
-  externalSurfaceM2: ['ExternalSurface/m2'],
+  description: ['Description', 'Material Description Detail', 'description', 'desc', 'DESC', 'itemDescription', 'item_description'],
+  cutLength: ['Length/mm', 'Lenght (mm)', 'Length (mm)', 'Length', 'Cut Length', 'Comp. Corte (mm)', 'comprimento', 'Comprimento', 'cutLength', 'cut_length', 'length', 'cutL', 'Cut L.'],
+  identCode: ['IdentCode', 'Ident Code', 'IDENT (Mark for Gemapi)', 'identCode', 'Code'],
+  tag: ['Tag', 'Tag (*)'],
+  weightKg: ['Weight/kg', 'Weight (kg)'],
+  externalSurfaceM2: ['ExternalSurface/m2', 'External Surface (mq)', 'External Surface (m2)'],
   paintingSurfaceM2: ['PaintingSurface/m2'],
   icon: ['Icone', 'Icon'],
-  positionStatus: ['PositionStatus'],
+  positionStatus: ['PositionStatus', 'Position Status (**)'],
   constructionActivity: ['ConstructionActivity'],
   equipmentName: ['Equipment Name', 'EquipmentName', 'equipmentName', 'Equipment'],
   material: ['Material', 'material', 'Grade', 'materialGrade', 'material_grade', 'grade'],
   line: ['Line'],
   type: ['Type'],
-  mountErection: ['Mount/Erection'],
-  instrument: ['Instrument'],
-  discipline: ['Discipline'],
+  mountErection: ['Mount/Erection', 'Prefabrication / Erection'],
+  instrument: ['Instrument', 'Instrument (***)'],
+  discipline: ['Discipline', 'Discipline (Piping)'],
   profile: ['profile', 'section', 'Section', 'perfil', 'Perfil'],
   priority: ['priority', 'Priority', 'prioridade', 'Prioridade'],
 };
+
+export const MTO_IMPORT_COLUMN_DEFINITIONS = Object.freeze([
+  { field: 'drawing', label: 'Drawing', required: true },
+  { field: 'revision', label: 'Revision', required: false },
+  { field: 'mark', label: 'Mark', required: true },
+  { field: 'pos', label: 'Position', required: true },
+  { field: 'qty', label: 'Quantity', required: true },
+  { field: 'description', label: 'Description', required: false },
+  { field: 'cutLength', label: 'Length/mm', required: true },
+  { field: 'material', label: 'Material', required: true },
+  { field: 'identCode', label: 'IdentCode', required: false },
+  { field: 'tag', label: 'Tag', required: false },
+  { field: 'weightKg', label: 'Weight/kg', required: false },
+  { field: 'externalSurfaceM2', label: 'ExternalSurface/m2', required: false },
+  { field: 'positionStatus', label: 'PositionStatus', required: false },
+  { field: 'line', label: 'Line', required: false },
+  { field: 'type', label: 'Type', required: false },
+  { field: 'mountErection', label: 'Mount/Erection', required: false },
+  { field: 'instrument', label: 'Instrument', required: false },
+  { field: 'discipline', label: 'Discipline', required: false },
+]);
 
 const NORMALIZED_ALIASES = Object.fromEntries(
   Object.entries(FIELD_ALIASES).map(([field, aliases]) => [
@@ -111,15 +133,10 @@ export function normalizeMtoHeaderKey(header) {
   return normalized.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function numberValue(value) {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  const normalized = String(value ?? '')
-    .trim()
-    .replace(/\s*(mm|kg|m2|m²)$/i, '')
-    .replace(',', '.')
-    .trim();
-  const number = Number(normalized);
-  return Number.isFinite(number) ? number : 0;
+function sourceRowNumber(value) {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : 0;
+  const normalized = String(value ?? '').trim();
+  return /^\d+$/.test(normalized) ? Number(normalized) : 0;
 }
 
 function objectValue(value) {
@@ -135,7 +152,11 @@ function normalizedRowMap(row) {
   return map;
 }
 
-function valueFromAliases(row, field) {
+function valueFromAliases(row, field, columnMapping = {}) {
+  const mappedHeader = text(columnMapping?.[field]);
+  if (mappedHeader && Object.prototype.hasOwnProperty.call(row || {}, mappedHeader)) {
+    return row[mappedHeader];
+  }
   const aliases = NORMALIZED_ALIASES[field] || [];
   const values = normalizedRowMap(row);
   for (const alias of aliases) {
@@ -144,8 +165,91 @@ function valueFromAliases(row, field) {
   return '';
 }
 
-function fieldValue(row, field) {
-  return valueFromAliases(row, field);
+function fieldValue(row, field, options = {}) {
+  return valueFromAliases(row, field, options.columnMapping);
+}
+
+function editDistance(left, right) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[right.length];
+}
+
+function similarHeader(field, headers, usedHeaders) {
+  const aliases = NORMALIZED_ALIASES[field] || [];
+  let best = null;
+  headers.forEach((header) => {
+    if (usedHeaders.has(header) || !text(header) || /^null(?:_\d+)?$/i.test(text(header))) return;
+    const normalized = normalizeMtoHeaderKey(header);
+    aliases.forEach((alias) => {
+      if (!normalized || !alias) return;
+      const score = 1 - (editDistance(normalized, alias) / Math.max(normalized.length, alias.length));
+      if (score >= 0.78 && (!best || score > best.score)) best = { header, score };
+    });
+  });
+  return best;
+}
+
+export function suggestMtoColumnMappings(sourceHeaders = []) {
+  const headers = sourceHeaders.map(text).filter(Boolean);
+  const normalizedHeaders = new Map(headers.map((header) => [normalizeMtoHeaderKey(header), header]));
+  const usedHeaders = new Set();
+  const profileHeaders = ['Shop Drawing Name', 'SPOOL', 'Material Description Detail', 'IDENT (Mark for Gemapi)'];
+  const isShopDrawingProfile = profileHeaders.every((header) => normalizedHeaders.has(normalizeMtoHeaderKey(header)));
+
+  return MTO_IMPORT_COLUMN_DEFINITIONS.map((definition) => {
+    let sourceHeader = '';
+    let confidence = 'none';
+    let reason = 'Nenhuma coluna compativel foi encontrada. Selecione manualmente.';
+    const profileHeader = isShopDrawingProfile
+      ? ({ material: 'Line Specification', line: 'Notes' }[definition.field] || '')
+      : '';
+    if (profileHeader) {
+      sourceHeader = normalizedHeaders.get(normalizeMtoHeaderKey(profileHeader)) || '';
+      if (sourceHeader && !usedHeaders.has(sourceHeader)) {
+        confidence = 'review';
+        reason = 'Sugestao baseada no formato Shop Drawing detectado; confirme pelos valores da previa.';
+      } else sourceHeader = '';
+    }
+    if (!sourceHeader) {
+      const exact = (NORMALIZED_ALIASES[definition.field] || [])
+        .map((alias) => normalizedHeaders.get(alias))
+        .find((header) => header && !usedHeaders.has(header));
+      if (exact) {
+        sourceHeader = exact;
+        confidence = 'high';
+        reason = normalizeMtoHeaderKey(exact) === normalizeMtoHeaderKey(definition.label)
+          ? 'Titulo reconhecido diretamente.'
+          : 'Titulo alternativo reconhecido com alta confianca.';
+      }
+    }
+    if (!sourceHeader) {
+      const similar = similarHeader(definition.field, headers, usedHeaders);
+      if (similar) {
+        sourceHeader = similar.header;
+        confidence = 'review';
+        reason = 'Titulo parecido encontrado; revise antes de continuar.';
+      }
+    }
+    if (sourceHeader) usedHeaders.add(sourceHeader);
+    return { ...definition, sourceHeader, confidence, reason };
+  });
+}
+
+export function mtoColumnMappingFromSuggestions(suggestions = []) {
+  return Object.fromEntries(suggestions
+    .filter((suggestion) => text(suggestion?.field) && text(suggestion?.sourceHeader))
+    .map((suggestion) => [suggestion.field, suggestion.sourceHeader]));
 }
 
 function engineeringMetadata(row) {
@@ -211,19 +315,37 @@ export function validateMtoItem(item) {
   if (!text(item.mark)) errors.push('Missing mark');
   if (!text(item.pos)) errors.push('Missing POS');
   if (!text(item.material)) errors.push('Missing material');
-  if (numberValue(item.qty) <= 0) errors.push('Invalid quantity');
-  if (numberValue(item.cutLength) <= 0) errors.push('Invalid cut length');
+  const validatePositiveMeasure = (field, label) => {
+    const parsing = item?.metadata?.numericParsing?.[field] || parseLocalizedNumber(item?.[field]);
+    const missing = parsing.rawValue == null || String(parsing.rawValue).trim() === '';
+    if (missing) errors.push(`Missing ${label}`);
+    else if (!parsing.valid) errors.push(`Invalid ${label} format`);
+    else if (parsing.parsedValue <= 0) errors.push(`Invalid ${label}`);
+  };
+  validatePositiveMeasure('qty', 'quantity');
+  validatePositiveMeasure('cutLength', 'cut length');
   return errors;
 }
 
 export function normalizeMtoRow(row, options = {}) {
   const source = row && typeof row === 'object' ? row : {};
-  const qty = numberValue(fieldValue(source, 'qty'));
-  const cutLength = numberValue(fieldValue(source, 'cutLength'));
-  const requiredLength = options.requiredLength == null
-    ? qty * cutLength
-    : numberValue(options.requiredLength);
-  const description = text(fieldValue(source, 'description'));
+  const sourceValue = (field) => fieldValue(source, field, options);
+  const numericParsing = {
+    qty: parseLocalizedNumber(sourceValue('qty')),
+    cutLength: parseLocalizedNumber(sourceValue('cutLength')),
+    weightKg: parseLocalizedNumber(sourceValue('weightKg')),
+    externalSurfaceM2: parseLocalizedNumber(sourceValue('externalSurfaceM2')),
+    paintingSurfaceM2: parseLocalizedNumber(sourceValue('paintingSurfaceM2')),
+  };
+  const qty = numericParsing.qty.parsedValue;
+  const cutLength = numericParsing.cutLength.parsedValue;
+  const explicitRequiredLength = options.requiredLength != null
+    ? parseLocalizedNumber(options.requiredLength)
+    : null;
+  const requiredLength = explicitRequiredLength
+    ? explicitRequiredLength.parsedValue
+    : (qty == null || cutLength == null ? null : qty * cutLength);
+  const description = text(sourceValue('description'));
   const metadataOptions = objectValue(options.metadata);
   const metadata = {
     ...metadataOptions,
@@ -232,40 +354,46 @@ export function normalizeMtoRow(row, options = {}) {
       ...engineeringMetadata(source),
       ...(metadataOptions.engineering || {}),
     },
+    numericParsing: {
+      ...(metadataOptions.numericParsing || {}),
+      ...numericParsing,
+      ...(explicitRequiredLength ? { requiredLength: explicitRequiredLength } : {}),
+    },
+    columnMapping: { ...(options.columnMapping || {}) },
   };
 
   const item = {
     id: '',
     batchId: text(options.batchId),
     projectId: text(options.projectId),
-    free: text(fieldValue(source, 'free')),
-    drawing: text(fieldValue(source, 'drawing')),
-    revision: text(fieldValue(source, 'revision')),
-    mark: text(fieldValue(source, 'mark')),
-    pos: text(fieldValue(source, 'pos')),
+    free: text(sourceValue('free')),
+    drawing: text(sourceValue('drawing')),
+    revision: text(sourceValue('revision')),
+    mark: text(sourceValue('mark')),
+    pos: text(sourceValue('pos')),
     qty,
     description,
     cutLength,
     requiredLength,
-    identCode: text(fieldValue(source, 'identCode')),
-    tag: text(fieldValue(source, 'tag')),
-    weightKg: numberValue(fieldValue(source, 'weightKg')),
-    externalSurfaceM2: numberValue(fieldValue(source, 'externalSurfaceM2')),
-    paintingSurfaceM2: numberValue(fieldValue(source, 'paintingSurfaceM2')),
-    icon: text(fieldValue(source, 'icon')),
-    positionStatus: text(fieldValue(source, 'positionStatus')),
-    constructionActivity: text(fieldValue(source, 'constructionActivity')),
-    equipmentName: text(fieldValue(source, 'equipmentName')),
-    material: text(fieldValue(source, 'material')),
-    line: text(fieldValue(source, 'line')),
-    type: text(fieldValue(source, 'type')),
-    mountErection: text(fieldValue(source, 'mountErection')),
-    instrument: text(fieldValue(source, 'instrument')),
-    discipline: text(fieldValue(source, 'discipline')),
-    profile: text(fieldValue(source, 'profile')) || description,
-    priority: text(fieldValue(source, 'priority')),
+    identCode: text(sourceValue('identCode')),
+    tag: text(sourceValue('tag')),
+    weightKg: numericParsing.weightKg.parsedValue,
+    externalSurfaceM2: numericParsing.externalSurfaceM2.parsedValue,
+    paintingSurfaceM2: numericParsing.paintingSurfaceM2.parsedValue,
+    icon: text(sourceValue('icon')),
+    positionStatus: text(sourceValue('positionStatus')),
+    constructionActivity: text(sourceValue('constructionActivity')),
+    equipmentName: text(sourceValue('equipmentName')),
+    material: text(sourceValue('material')),
+    line: text(sourceValue('line')),
+    type: text(sourceValue('type')),
+    mountErection: text(sourceValue('mountErection')),
+    instrument: text(sourceValue('instrument')),
+    discipline: text(sourceValue('discipline')),
+    profile: text(sourceValue('profile')) || description,
+    priority: text(sourceValue('priority')),
     status: text(options.defaultStatus),
-    sourceRowNumber: numberValue(options.sourceRowNumber),
+    sourceRowNumber: sourceRowNumber(options.sourceRowNumber),
     validationErrors: [],
     metadata,
   };
@@ -308,7 +436,10 @@ export async function parseMtoFile(file, options = {}) {
   const extension = String(file?.name || '').split('.').pop().toLowerCase();
   const rows = extension === 'csv'
     ? parseMtoCsvText(decodeMtoTextFromArrayBuffer(await file.arrayBuffer()), options)
-    : await readExcelFile(file);
+    : await readExcelFile(file, {
+      sheetName: options.sheetName,
+      headerRowIndex: options.headerRowIndex,
+    });
   return {
     ...parseMtoRows(rows, options),
     file: {

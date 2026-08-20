@@ -9,40 +9,42 @@ import { parseInventoryRows } from '../data/inventoryImport.js';
 import { readExcelFile } from '../data/excel.js';
 import { createStockMovement, STOCK_MOVEMENT_TYPES } from '../data/stockMovements.js';
 import { createAuditEvent, AUDIT_EVENT_TYPES } from '../data/auditLog.js';
+import { commitInventoryAdjustment } from '../data/inventoryAdjustmentTransaction.js';
 import { openModal, closeModal } from './modal.js';
 import { showToast } from './toast.js';
 
 const stateByContainer = new WeakMap();
 
 const STATUSES = ['available', 'reserved', 'issued', 'consumed', 'returned', 'scrap', 'on-hold', 'quarantine'];
+const QUALITY_STATUSES = ['ACCEPTED', 'PENDING', 'HOLD', 'QUARANTINE', 'REJECTED'];
 const EDIT_FIELD_GROUPS = Object.freeze([
   {
     title: 'Identification',
-    fields: ['status', 'traceability', 'category', 'materialDescription', 'materialClassification', 'material'],
+    fields: ['status', 'traceability', 'category', 'materialDescription', 'materialClassification', 'materialGrade'],
   },
   {
     title: 'Dimensions & Quantity',
-    fields: ['thickness', 'od', 'width', 'length', 'unitOfMeasure', 'totalWeightKg', 'totalPoQty', 'receivedQty', 'issuedQty', 'balanceQty'],
+    fields: ['thicknessMm', 'diaMm', 'widthMm', 'lengthMm', 'unit', 'weightKg', 'totalPoQty', 'receivedQty', 'issuedQty', 'balanceQty'],
   },
   {
     title: 'Procurement',
-    fields: ['vendor', 'poItemPo', 'poNumber', 'poItem', 'poSubject', 'sapCode', 'regime', 'entryInvoice', 'receivedDate', 'mrr'],
+    fields: ['vendor', 'poItemPo', 'po', 'poItem', 'poSubject', 'sapCode', 'regime', 'nfArrival', 'receivedDate', 'mrr'],
   },
   {
     title: 'Quality & Certification',
-    fields: ['partNumber', 'serialNumber', 'mtcNumber', 'heat', 'mirNumber', 'inspectionStatus', 'acceptanceStatus'],
+    fields: ['partNumber', 'serialNumber', 'mtcNumber', 'heatNo', 'mir', 'inspectionStatus', 'acceptanceStatus', 'qualityStatus'],
   },
   {
     title: 'Location',
-    fields: ['storageLocation', 'locationZone', 'equipmentDesignation', 'colorCode'],
+    fields: ['location', 'locationZone', 'equipment', 'colorCode'],
   },
   {
     title: 'Movement',
-    fields: ['materialCouponNo', 'exitDate', 'exitInvoice', 'rmvNo', 'disponibilidade'],
+    fields: ['materialCouponNo', 'exitDate', 'exitInvoice', 'rmvNo'],
   },
   {
     title: 'Comments',
-    fields: ['comments'],
+    fields: ['notes'],
   },
 ]);
 const EDIT_FIELDS = EDIT_FIELD_GROUPS.flatMap((group) => group.fields);
@@ -55,32 +57,33 @@ const EDIT_FIELD_LABELS = Object.freeze({
   category: 'Category',
   materialDescription: 'Material Description',
   materialClassification: 'Material Classification',
-  thickness: 'Thk (mm)',
-  od: 'Dia. (OD) (mm)',
-  width: 'Width (mm)',
-  length: 'Length (mm)',
-  unitOfMeasure: 'Unit of Measure',
-  totalWeightKg: 'Total Weight (KG)',
-  entryInvoice: 'Entry Invoice [NF]',
+  thicknessMm: 'Thk (mm)',
+  diaMm: 'Dia. (OD) (mm)',
+  widthMm: 'Width (mm)',
+  lengthMm: 'Length (mm)',
+  unit: 'Unit of Measure',
+  weightKg: 'Total Weight (KG)',
+  nfArrival: 'Entry Invoice [NF]',
   receivedDate: 'Received Date',
   mrr: 'MRR',
   poSubject: 'PO Subject / Chrono Number',
-  poNumber: 'PO Number',
+  po: 'PO Number',
   poItem: 'PO Item #',
   sapCode: 'SAP Code',
   regime: 'Regime',
   partNumber: 'Part Number',
   serialNumber: 'Serial Number',
   mtcNumber: 'MTC Number [Certificate]',
-  heat: 'Heat Number',
-  material: 'Material & Grade',
-  mirNumber: 'MIR Number',
+  heatNo: 'Heat Number',
+  materialGrade: 'Material & Grade',
+  mir: 'MIR Number',
   inspectionStatus: 'Inspection Status',
   acceptanceStatus: 'Acceptance Status',
+  qualityStatus: 'Quality Release Status',
   colorCode: 'Color Code',
-  storageLocation: 'Storage Location',
+  location: 'Storage Location',
   locationZone: 'Location Zone',
-  equipmentDesignation: 'Equipment Designation',
+  equipment: 'Equipment Designation',
   totalPoQty: 'Total PO Qty',
   receivedQty: 'Received Qty',
   issuedQty: 'Issued Mat. Qty',
@@ -89,20 +92,16 @@ const EDIT_FIELD_LABELS = Object.freeze({
   exitDate: 'Exit / Movement Date at CTCO',
   exitInvoice: 'Exit Invoice [NF]',
   rmvNo: 'RMV No.',
-  disponibilidade: 'Disponibilidade',
-  comments: 'Comments',
+  notes: 'Comments',
 });
 
-const TABS = [
-  { id: 'all', label: 'All' },
-  { id: 'available', label: 'Available' },
-  { id: 'reserved', label: 'Reserved' },
-  { id: 'issued', label: 'Issued' },
-  { id: 'consumed', label: 'Consumed' },
-  { id: 'missing-traceability', label: 'Missing Traceability' },
-  { id: 'missing-heat', label: 'Missing Heat' },
-  { id: 'returned', label: 'Returned Offcuts' },
-  { id: 'category', label: 'By Category' },
+const QUICK_FILTERS = [
+  { id: 'all', label: 'Todos' },
+  { id: 'available', label: 'Disponíveis' },
+  { id: 'reserved', label: 'Reservados' },
+  { id: 'quality-pending', label: 'Aguardando qualidade' },
+  { id: 'missing-traceability', label: 'Sem rastreabilidade' },
+  { id: 'returned', label: 'Retornos' },
 ];
 
 const COLUMN_VIEW_LABELS = Object.freeze({
@@ -146,11 +145,11 @@ function fieldValue(item, fields) {
 }
 
 function lengthValue(item) {
-  return numberValue(item.currentLength || item.length || item.comprimento || item.comp || item.originalLength);
+  return numberValue(item.lengthMm);
 }
 
 function weightValue(item) {
-  return numberValue(item.totalWeightKg || item.totalWeight || item.weight || item.weightKg || item['Weight/kg']);
+  return numberValue(item.weightKg);
 }
 
 export function normalizeInventorySearchText(value) {
@@ -163,7 +162,17 @@ export function getInventoryStatus(item) {
 }
 
 export function getInventoryCategoryKey(item) {
-  return fieldValue(item || {}, ['category', 'type', 'profile', 'material', 'description', 'desc']) || 'Uncategorized';
+  return fieldValue(item || {}, ['category', 'type', 'profile', 'materialGrade', 'materialDescription']) || 'Uncategorized';
+}
+
+export function getInventoryQualityState(item = {}) {
+  const inspection = text(item.inspectionStatus).toUpperCase();
+  const release = text(item.qualityStatus || item.acceptanceStatus || 'ACCEPTED').toUpperCase();
+  const blocked = ['REJECTED', 'HOLD', 'ON_HOLD', 'QUARANTINE', 'QUARANTINED'];
+  if (blocked.includes(inspection) || blocked.includes(release)) return 'blocked';
+  if (inspection && !['ACCEPTED', 'APPROVED', 'RELEASED', 'N/A', 'NA', 'N A'].includes(inspection)) return 'pending';
+  if (!['ACCEPTED', 'APPROVED', 'RELEASED', 'LIBERADO', 'ACEITO', 'N/A', 'NA', 'N A'].includes(release)) return 'pending';
+  return 'accepted';
 }
 
 export function inventoryRowMatchesSearch(item, query) {
@@ -172,34 +181,28 @@ export function inventoryRowMatchesSearch(item, query) {
   const rowText = normalizeInventorySearchText([
     item.id,
     item.po,
-    item.item,
+    item.poItem,
     item.category,
     item.type,
     item.profile,
-    item.material,
     item.materialGrade,
     item.materialDescription,
     item.materialClassification,
-    item.description,
-    item.desc,
-    item.heat,
-    item.heatNumber,
+    item.heatNo,
     item.traceability,
     item.trace,
     item.status,
     item.projectId,
     item.sourceDocumentId,
     item.vendor,
-    item.poNumber,
     item.poItem,
     item.sapCode,
-    item.storageLocation,
+    item.location,
     item.locationZone,
-    item.equipmentDesignation,
+    item.equipment,
     item.materialCouponNo,
     item.rmvNo,
-    item.disponibilidade,
-    item.comments,
+    item.notes,
   ].join(' '));
   return tokens.every((token) => rowText.includes(token));
 }
@@ -213,8 +216,10 @@ export function calculateInventoryDashboard(items) {
     issued: source.filter((item) => getInventoryStatus(item) === 'issued').length,
     consumed: source.filter((item) => getInventoryStatus(item) === 'consumed').length,
     returned: source.filter((item) => getInventoryStatus(item) === 'returned').length,
+    qualityPending: source.filter((item) => getInventoryQualityState(item) === 'pending').length,
+    qualityBlocked: source.filter((item) => getInventoryQualityState(item) === 'blocked').length,
     missingTraceability: source.filter((item) => !fieldValue(item, ['traceability', 'trace'])).length,
-    missingHeat: source.filter((item) => !fieldValue(item, ['heat', 'heatNumber'])).length,
+    missingHeat: source.filter((item) => !text(item.heatNo)).length,
     availableLength: source
       .filter((item) => getInventoryStatus(item) === 'available')
       .reduce((sum, item) => sum + lengthValue(item), 0),
@@ -230,6 +235,7 @@ function getInitialState(options) {
   return {
     activeTab: 'all',
     categoryGroup: '',
+    filtersExpanded: false,
     selectedIds: new Set(),
     filters: {
       search: '',
@@ -287,13 +293,58 @@ function restoreFocus(container, snapshot) {
   }
 }
 
+function captureScrollPosition(container) {
+  const tableWrap = container.querySelector('.inventory-page-table-wrap');
+  const ancestorPositions = [];
+  let ancestor = container.parentElement;
+
+  while (ancestor) {
+    if (ancestor.scrollHeight > ancestor.clientHeight || ancestor.scrollWidth > ancestor.clientWidth) {
+      ancestorPositions.push({
+        element: ancestor,
+        top: ancestor.scrollTop,
+        left: ancestor.scrollLeft,
+      });
+    }
+    ancestor = ancestor.parentElement;
+  }
+
+  return {
+    tableTop: tableWrap?.scrollTop ?? 0,
+    tableLeft: tableWrap?.scrollLeft ?? 0,
+    viewportTop: window.scrollY,
+    viewportLeft: window.scrollX,
+    ancestorPositions,
+  };
+}
+
+function restoreScrollPosition(container, snapshot) {
+  if (!snapshot) return;
+  const tableWrap = container.querySelector('.inventory-page-table-wrap');
+  if (tableWrap) {
+    tableWrap.scrollTop = snapshot.tableTop;
+    tableWrap.scrollLeft = snapshot.tableLeft;
+  }
+
+  snapshot.ancestorPositions.forEach(({ element, top, left }) => {
+    element.scrollTop = top;
+    element.scrollLeft = left;
+  });
+
+  window.requestAnimationFrame(() => {
+    window.scrollTo(snapshot.viewportLeft, snapshot.viewportTop);
+    snapshot.ancestorPositions.forEach(({ element, top, left }) => {
+      element.scrollTop = top;
+      element.scrollLeft = left;
+    });
+  });
+}
+
 function applyTab(items, state) {
   if (state.activeTab === 'missing-traceability') return items.filter((item) => !fieldValue(item, ['traceability', 'trace']));
-  if (state.activeTab === 'missing-heat') return items.filter((item) => !fieldValue(item, ['heat', 'heatNumber']));
+  if (state.activeTab === 'missing-heat') return items.filter((item) => !text(item.heatNo));
   if (state.activeTab === 'returned') return items.filter((item) => getInventoryStatus(item) === 'returned');
-  if (state.activeTab === 'category' && state.categoryGroup) {
-    return items.filter((item) => getInventoryCategoryKey(item) === state.categoryGroup);
-  }
+  if (state.activeTab === 'quality-pending') return items.filter((item) => getInventoryQualityState(item) !== 'accepted');
   if (STATUSES.includes(state.activeTab)) return items.filter((item) => getInventoryStatus(item) === state.activeTab);
   return items;
 }
@@ -303,9 +354,9 @@ function applyFilters(items, state) {
   return items.filter((item) => (
     inventoryRowMatchesSearch(item, filters.search) &&
     (!filters.category || getInventoryCategoryKey(item) === filters.category) &&
-    (!filters.material || text(item.material) === filters.material) &&
+    (!filters.material || text(item.materialGrade) === filters.material) &&
     (!filters.status || getInventoryStatus(item) === filters.status) &&
-    (!filters.heat || fieldValue(item, ['heat', 'heatNumber']) === filters.heat) &&
+    (!filters.heat || text(item.heatNo) === filters.heat) &&
     (!filters.traceabilityStatus ||
       (filters.traceabilityStatus === 'with' && !!fieldValue(item, ['traceability', 'trace'])) ||
       (filters.traceabilityStatus === 'missing' && !fieldValue(item, ['traceability', 'trace'])))
@@ -343,37 +394,41 @@ function selectedItems(items, state) {
   return items.filter((item) => state.selectedIds.has(itemId(item)));
 }
 
-function kpi(label, value) {
-  const card = el('div', 'inventory-kpi-card');
+function kpi(label, value, options = {}) {
+  const card = el(options.onClick ? 'button' : 'div', `inventory-kpi-card${options.active ? ' active' : ''}`);
+  if (options.onClick) {
+    card.type = 'button';
+    card.addEventListener('click', options.onClick);
+  }
   card.append(el('span', null, label), el('strong', null, value));
+  if (options.note) card.append(el('small', null, options.note));
   return card;
 }
 
-function renderDashboard(items, selectedCount, visibleCount) {
+function renderDashboard(items, state, visibleCount, rerender) {
   const summary = calculateInventoryDashboard(items);
   const section = el('section', 'inventory-page-dashboard');
+  const heading = el('div', 'inventory-dashboard-heading');
+  const headingCopy = el('div');
+  headingCopy.append(el('span', 'inventory-section-label', 'Visão geral'), el('h2', null, 'Situação do estoque'));
+  heading.append(headingCopy, el('span', 'inventory-dashboard-context', `${visibleCount} de ${summary.total} itens exibidos`));
   const grid = el('div', 'inventory-kpi-grid');
   grid.append(
-    kpi('Total Items', String(summary.total)),
-    kpi('Showing', String(visibleCount)),
-    kpi('Available', String(summary.available)),
-    kpi('Reserved', String(summary.reserved)),
-    kpi('Issued', String(summary.issued)),
-    kpi('Consumed', String(summary.consumed)),
-    kpi('Returned Offcuts', String(summary.returned)),
-    kpi('Missing Traceability', String(summary.missingTraceability)),
-    kpi('Missing Heat', String(summary.missingHeat)),
-    kpi('Total Available Length', `${summary.availableLength.toLocaleString('pt-BR')} mm`),
-    kpi('Total Weight', `${summary.totalWeight.toLocaleString('pt-BR')} kg`),
-    kpi('Selected', String(selectedCount)),
+    kpi('Total no Inventory', String(summary.total), { active: state.activeTab === 'all', onClick: () => { state.activeTab = 'all'; rerender(); } }),
+    kpi('Disponíveis', String(summary.available), { active: state.activeTab === 'available', onClick: () => { state.activeTab = 'available'; rerender(); }, note: `${summary.availableLength.toLocaleString('pt-BR')} mm disponíveis` }),
+    kpi('Reservados', String(summary.reserved), { active: state.activeTab === 'reserved', onClick: () => { state.activeTab = 'reserved'; rerender(); } }),
+    kpi('Qualidade pendente', String(summary.qualityPending + summary.qualityBlocked), { active: state.activeTab === 'quality-pending', onClick: () => { state.activeTab = 'quality-pending'; rerender(); }, note: `${summary.qualityBlocked} bloqueado(s)` }),
+    kpi('Sem rastreabilidade', String(summary.missingTraceability), { active: state.activeTab === 'missing-traceability', onClick: () => { state.activeTab = 'missing-traceability'; rerender(); } }),
+    kpi('Peso cadastrado', `${summary.totalWeight.toLocaleString('pt-BR')} kg`, { note: `${state.selectedIds.size} selecionado(s)` }),
   );
-  section.append(grid);
+  section.append(heading, grid);
   return section;
 }
 
 function renderTabs(items, state, rerender) {
-  const tabs = el('div', 'inventory-page-tabs');
-  TABS.forEach((tab) => {
+  const tabs = el('nav', 'inventory-page-tabs');
+  tabs.setAttribute('aria-label', 'Filtros rápidos do Inventory');
+  QUICK_FILTERS.forEach((tab) => {
     const button = el('button', `inventory-tabs-item${state.activeTab === tab.id ? ' active' : ''}`, tab.label);
     button.type = 'button';
     button.addEventListener('click', () => {
@@ -383,37 +438,7 @@ function renderTabs(items, state, rerender) {
     tabs.append(button);
   });
 
-  if (state.activeTab !== 'category') return tabs;
-  const categories = uniqueValues(items, getInventoryCategoryKey);
-  if (categories.length && !categories.includes(state.categoryGroup)) state.categoryGroup = categories[0];
-  const groupWrap = el('div', 'inventory-page-category-groups');
-  if (categories.length > 12) {
-    const select = el('select');
-    categories.forEach((category) => {
-      const option = el('option', null, category);
-      option.value = category;
-      option.selected = category === state.categoryGroup;
-      select.append(option);
-    });
-    select.addEventListener('change', () => {
-      state.categoryGroup = select.value;
-      rerender();
-    });
-    groupWrap.append(select);
-  } else {
-    categories.forEach((category) => {
-      const button = el('button', `inventory-tabs-item${state.categoryGroup === category ? ' active' : ''}`, category);
-      button.type = 'button';
-      button.addEventListener('click', () => {
-        state.categoryGroup = category;
-        rerender();
-      });
-      groupWrap.append(button);
-    });
-  }
-  const wrapper = document.createDocumentFragment();
-  wrapper.append(tabs, groupWrap);
-  return wrapper;
+  return tabs;
 }
 
 function renderSelect(label, value, options, onChange, emptyLabel = 'Todos') {
@@ -437,12 +462,11 @@ function renderSelect(label, value, options, onChange, emptyLabel = 'Todos') {
 
 function renderFilters(items, state, rerender) {
   const filters = el('section', 'inventory-page-filters');
-  const searchField = el('label', 'field');
-  searchField.append(el('span', null, 'Search'));
+  const searchField = el('label', 'inventory-search-field');
   const search = el('input');
   search.id = 'inventory-search-input';
   search.type = 'search';
-  search.placeholder = 'Process Pipe, A106 1510481...';
+  search.placeholder = 'Buscar por material, trace, heat, PO ou local...';
   search.value = state.filters.search;
   search.addEventListener('input', () => {
     state.filters.search = search.value;
@@ -450,12 +474,24 @@ function renderFilters(items, state, rerender) {
   });
   searchField.append(search);
 
-  filters.append(
-    searchField,
+  const toggle = el('button', `btn btn-ghost inventory-filter-toggle${state.filtersExpanded ? ' active' : ''}`, state.filtersExpanded ? 'Ocultar filtros' : 'Filtros');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', String(state.filtersExpanded));
+  toggle.addEventListener('click', () => {
+    state.filtersExpanded = !state.filtersExpanded;
+    rerender();
+  });
+  const commandbar = el('div', 'inventory-filter-commandbar');
+  commandbar.append(searchField, toggle);
+  filters.append(commandbar);
+  if (!state.filtersExpanded) return filters;
+
+  const advanced = el('div', 'inventory-filter-fields');
+  advanced.append(
     renderSelect('Category', state.filters.category, uniqueValues(items, getInventoryCategoryKey), (value) => { state.filters.category = value; rerender(); }),
-    renderSelect('Material', state.filters.material, uniqueValues(items, (item) => text(item.material)), (value) => { state.filters.material = value; rerender(); }),
+    renderSelect('Material', state.filters.material, uniqueValues(items, (item) => text(item.materialGrade)), (value) => { state.filters.material = value; rerender(); }),
     renderSelect('Status', state.filters.status, STATUSES, (value) => { state.filters.status = value; rerender(); }),
-    renderSelect('Heat', state.filters.heat, uniqueValues(items, (item) => fieldValue(item, ['heat', 'heatNumber'])), (value) => { state.filters.heat = value; rerender(); }),
+    renderSelect('Heat', state.filters.heat, uniqueValues(items, (item) => text(item.heatNo)), (value) => { state.filters.heat = value; rerender(); }),
     renderSelect('Traceability', state.filters.traceabilityStatus, [
       { value: 'with', label: 'With Traceability' },
       { value: 'missing', label: 'Missing Traceability' },
@@ -468,7 +504,8 @@ function renderFilters(items, state, rerender) {
     state.filters = { search: '', category: '', material: '', status: '', heat: '', traceabilityStatus: '' };
     rerender();
   });
-  filters.append(clear);
+  advanced.append(clear);
+  filters.append(advanced);
   return filters;
 }
 
@@ -490,51 +527,43 @@ function itemPatchFromForm(form) {
     materialDescription: values.materialDescription,
     materialClassification: values.materialClassification,
     poItemPo: values.poItemPo,
-    po: values.poNumber,
-    item: values.poItem,
-    poNumber: values.poNumber,
+    po: values.po,
     poItem: values.poItem,
     poSubject: values.poSubject,
     sapCode: values.sapCode,
     regime: values.regime,
-    material: values.material,
-    materialGrade: values.material,
-    desc: values.materialDescription,
-    description: values.materialDescription,
-    thkMm: values.thickness,
-    diaOdMm: values.od,
-    widthMm: values.width,
-    length: numberValue(values.length),
-    currentLength: numberValue(values.length),
-    unitOfMeasure: values.unitOfMeasure,
-    totalWeightKg: numberValue(values.totalWeightKg),
+    materialGrade: values.materialGrade,
+    thicknessMm: values.thicknessMm,
+    diaMm: values.diaMm,
+    widthMm: values.widthMm,
+    lengthMm: numberValue(values.lengthMm),
+    unit: values.unit,
+    weightKg: numberValue(values.weightKg),
     totalPoQty: numberValue(values.totalPoQty),
     receivedQty: numberValue(values.receivedQty),
     issuedQty: numberValue(values.issuedQty),
     balanceQty: numberValue(values.balanceQty),
-    entryInvoice: values.entryInvoice,
+    nfArrival: values.nfArrival,
     receivedDate: values.receivedDate,
     mrr: values.mrr,
     partNumber: values.partNumber,
     serialNumber: values.serialNumber,
     mtcNumber: values.mtcNumber,
-    heat: values.heat,
-    heatNumber: values.heat,
-    mirNumber: values.mirNumber,
+    heatNo: values.heatNo,
+    mir: values.mir,
     inspectionStatus: values.inspectionStatus,
     acceptanceStatus: values.acceptanceStatus,
+    qualityStatus: values.qualityStatus || 'ACCEPTED',
+    qualitySource: 'manual',
     colorCode: values.colorCode,
-    storageLocation: values.storageLocation,
-    location: values.storageLocation,
+    location: values.location,
     locationZone: values.locationZone,
-    equipmentDesignation: values.equipmentDesignation,
+    equipment: values.equipment,
     materialCouponNo: values.materialCouponNo,
     exitDate: values.exitDate,
     exitInvoice: values.exitInvoice,
     rmvNo: values.rmvNo,
-    disponibilidade: values.disponibilidade,
-    comments: values.comments,
-    notes: values.comments,
+    notes: values.notes,
   };
 }
 
@@ -544,51 +573,51 @@ function editValue(item, field) {
     traceability: fieldValue(item, ['traceability', 'trace']),
     vendor: fieldValue(item, ['vendor', 'vendorSupplier', 'supplier']),
     category: getInventoryCategoryKey(item) === 'Uncategorized' ? '' : getInventoryCategoryKey(item),
-    materialDescription: fieldValue(item, ['materialDescription', 'description', 'desc']),
+    materialDescription: text(item.materialDescription),
     materialClassification: text(item.materialClassification),
-    thickness: fieldValue(item, ['thkMm', 'thickness']),
-    od: fieldValue(item, ['diaOdMm', 'od']),
-    width: fieldValue(item, ['widthMm', 'width']),
-    length: String(lengthValue(item) || ''),
-    unitOfMeasure: fieldValue(item, ['unitOfMeasure', 'unit', 'uom']),
-    totalWeightKg: fieldValue(item, ['totalWeightKg', 'totalWeight', 'weightKg', 'weight']),
+    thicknessMm: text(item.thicknessMm),
+    diaMm: text(item.diaMm),
+    widthMm: text(item.widthMm),
+    lengthMm: String(lengthValue(item) || ''),
+    unit: text(item.unit),
+    weightKg: text(item.weightKg),
     totalPoQty: text(item.totalPoQty),
     receivedQty: text(item.receivedQty),
     issuedQty: fieldValue(item, ['issuedQty', 'issuedMatQty']),
     balanceQty: text(item.balanceQty),
     poItemPo: text(item.poItemPo),
-    poNumber: fieldValue(item, ['poNumber', 'po']),
-    poItem: fieldValue(item, ['poItem', 'item']),
+    po: text(item.po),
+    poItem: text(item.poItem),
     poSubject: fieldValue(item, ['poSubject', 'chronoNumber']),
     sapCode: text(item.sapCode),
     regime: text(item.regime),
-    entryInvoice: text(item.entryInvoice),
+    nfArrival: text(item.nfArrival),
     receivedDate: text(item.receivedDate),
     mrr: text(item.mrr),
     partNumber: text(item.partNumber),
     serialNumber: text(item.serialNumber),
     mtcNumber: fieldValue(item, ['mtcNumber', 'certificate']),
-    heat: fieldValue(item, ['heat', 'heatNumber']),
-    material: fieldValue(item, ['material', 'materialGrade']),
-    mirNumber: fieldValue(item, ['mirNumber', 'mir']),
+    heatNo: text(item.heatNo),
+    materialGrade: text(item.materialGrade),
+    mir: text(item.mir),
     inspectionStatus: text(item.inspectionStatus),
     acceptanceStatus: text(item.acceptanceStatus),
+    qualityStatus: text(item.qualityStatus || 'ACCEPTED').toUpperCase(),
     colorCode: text(item.colorCode),
-    storageLocation: fieldValue(item, ['storageLocation', 'location']),
+    location: text(item.location),
     locationZone: text(item.locationZone),
-    equipmentDesignation: fieldValue(item, ['equipmentDesignation', 'equipment']),
+    equipment: text(item.equipment),
     materialCouponNo: text(item.materialCouponNo),
     exitDate: text(item.exitDate),
     exitInvoice: text(item.exitInvoice),
     rmvNo: text(item.rmvNo),
-    disponibilidade: text(item.disponibilidade),
-    comments: fieldValue(item, ['comments', 'notes', 'remarks']),
+    notes: text(item.notes),
   };
   return values[field] || '';
 }
 
 function inputTypeForField(field) {
-  if (['length', 'thickness', 'od', 'width', 'totalWeightKg', 'totalPoQty', 'receivedQty', 'issuedQty', 'balanceQty'].includes(field)) return 'number';
+  if (['lengthMm', 'thicknessMm', 'diaMm', 'widthMm', 'weightKg', 'totalPoQty', 'receivedQty', 'issuedQty', 'balanceQty'].includes(field)) return 'number';
   if (['receivedDate', 'exitDate'].includes(field)) return 'date';
   return 'text';
 }
@@ -596,10 +625,11 @@ function inputTypeForField(field) {
 function renderEditField(field, item) {
   const label = el('label', 'field');
   label.append(el('span', null, EDIT_FIELD_LABELS[field] || field));
-  const control = field === 'status' ? el('select') : el('input');
+  const control = ['status', 'qualityStatus'].includes(field) ? el('select') : el('input');
   control.name = field;
-  if (field === 'status') {
-    STATUSES.forEach((status) => {
+  if (['status', 'qualityStatus'].includes(field)) {
+    const options = field === 'status' ? STATUSES : QUALITY_STATUSES;
+    options.forEach((status) => {
       const option = el('option', null, status);
       option.value = status;
       option.selected = status === editValue(item, field);
@@ -630,10 +660,10 @@ function renderItemForm(item = {}) {
 
 function validateInventoryPatch(patch) {
   const errors = [];
-  if (!text(patch.material)) errors.push('Material e obrigatorio.');
+  if (!text(patch.materialGrade)) errors.push('Material e obrigatorio.');
   const categoryText = normalizeInventorySearchText(`${patch.category} ${patch.type || ''} ${patch.profile || ''}`);
   const lengthBased = ['pipe', 'beam', 'bar', 'profile', 'tubo', 'barra', 'perfil'].some((token) => categoryText.includes(token));
-  if (lengthBased && numberValue(patch.length) <= 0) errors.push('Comprimento e obrigatorio para materiais lineares.');
+  if (lengthBased && numberValue(patch.lengthMm) <= 0) errors.push('Comprimento e obrigatorio para materiais lineares.');
   return errors;
 }
 
@@ -643,9 +673,7 @@ function duplicateItemDraft(item) {
     id: '',
     trace: '',
     traceability: '',
-    heat: '',
-    heatNumber: '',
-    disponibilidade: '',
+    heatNo: '',
     status: getInventoryStatus(item),
   };
 }
@@ -670,7 +698,7 @@ function openAddItemModal(state, rerender, initialItem = { status: 'available' }
             return;
           }
           if (!patch.traceability) showToast('Item salvo sem rastreabilidade.', 'error');
-          if (!patch.heat) showToast('Item salvo sem Heat.', 'error');
+          if (!patch.heatNo) showToast('Item salvo sem Heat.', 'error');
           const saved = await createInventoryItem(patch);
           state.selectedIds.clear();
           state.selectedIds.add(itemId(saved));
@@ -684,9 +712,18 @@ function openAddItemModal(state, rerender, initialItem = { status: 'available' }
 }
 
 function openEditItemModal(item, rerender) {
-  const before = { ...item };
   const form = renderItemForm(item);
-  openModal({
+  let modalHandle = null;
+  const setBusy = (busy) => {
+    form.setAttribute('aria-busy', String(busy));
+    form.querySelectorAll('input, select, textarea').forEach((control) => { control.disabled = busy; });
+    const saveButton = modalHandle?.bodyEl?.closest('.modal')?.querySelector('.modal-footer .btn-primary');
+    if (saveButton) {
+      saveButton.disabled = busy;
+      saveButton.textContent = busy ? 'Salvando…' : 'Salvar';
+    }
+  };
+  modalHandle = openModal({
     title: 'Editar item do inventario',
     body: form,
     wide: true,
@@ -703,8 +740,16 @@ function openEditItemModal(item, rerender) {
             showToast(errors[0], 'error');
             return;
           }
-          const updated = await updateInventoryItem(itemId(item), patch);
-          await logInventoryAdjustment(before, updated, false);
+          setBusy(true);
+          try {
+            await commitInventoryAdjustment(itemId(item), patch);
+          } catch (error) {
+            console.error(error);
+            showToast(inventoryAdjustmentErrorMessage(error, item), 'error');
+            return;
+          } finally {
+            setBusy(false);
+          }
           closeModal();
           showToast('Item de inventario atualizado.', 'success');
           await rerender(true);
@@ -714,7 +759,23 @@ function openEditItemModal(item, rerender) {
   });
 }
 
-async function logInventoryAdjustment(before, after, bulkAction) {
+function inventoryAdjustmentErrorMessage(error = {}, item = {}) {
+  const code = error.code || String(error.message || '').split(':')[0];
+  const traceability = fieldValue(item, ['traceability', 'trace']) || itemId(item);
+  const messages = {
+    INVENTORY_ITEM_ID_REQUIRED: 'Não foi possível identificar o item de Inventory.',
+    INVENTORY_ITEM_NOT_FOUND: `O item ${traceability || 'selecionado'} não foi encontrado no Inventory. Atualize a página e tente novamente.`,
+    INVENTORY_UPDATE_FAILED: 'Falha de armazenamento: não foi possível atualizar o item de Inventory.',
+    STOCK_MOVEMENT_WRITE_FAILED: 'Falha de armazenamento: não foi possível registrar a movimentação de estoque; nenhuma alteração foi salva.',
+    AUDIT_WRITE_FAILED: 'Falha de armazenamento: não foi possível registrar a auditoria; nenhuma alteração foi salva.',
+  };
+  if (messages[code]) return messages[code];
+  return error.message
+    ? `Não foi possível salvar o ajuste de Inventory: ${error.message}`
+    : 'Não foi possível salvar o ajuste de Inventory.';
+}
+
+async function logInventoryAdjustment(before, after, bulkAction, reason = 'Inventory status updated from Inventory page') {
   try {
     await createStockMovement({
       movementType: STOCK_MOVEMENT_TYPES.MANUAL_ADJUSTMENT,
@@ -722,7 +783,7 @@ async function logInventoryAdjustment(before, after, bulkAction) {
       projectId: after?.projectId || before?.projectId || '',
       previousStatus: before?.status || '',
       nextStatus: after?.status || '',
-      reason: 'Inventory status updated from Inventory page',
+      reason,
       before,
       after,
       metadata: { source: 'inventoryPage', bulkAction },
@@ -811,36 +872,85 @@ function openStatusModal(items, rerender) {
   });
 }
 
+function openQualityAcceptanceModal(items, rerender) {
+  const pending = items.filter((item) => getInventoryQualityState(item) !== 'accepted');
+  const body = el('div', 'inventory-quality-dialog');
+  body.append(
+    el('p', null, pending.length === 1
+      ? 'Confirmar o aceite de qualidade deste material?'
+      : `Confirmar o aceite de qualidade de ${pending.length} materiais?`),
+    el('p', 'text-muted', 'Inspection, acceptance e quality release serão registrados como ACCEPTED.'),
+  );
+  if (pending.length !== items.length) {
+    body.append(el('p', 'inventory-quality-note', `${items.length - pending.length} item(ns) já aceito(s) serão mantidos sem alteração.`));
+  }
+
+  openModal({
+    title: 'Aceite de qualidade',
+    body,
+    buttons: [
+      { label: 'Cancelar', variant: 'btn-ghost' },
+      {
+        label: `Aceitar ${pending.length || ''}`.trim(),
+        variant: 'btn-primary',
+        closeOnClick: false,
+        onClick: async () => {
+          if (!pending.length) {
+            closeModal();
+            showToast('Os materiais selecionados já estão aceitos.', 'info');
+            return;
+          }
+          await Promise.all(pending.map(async (item) => {
+            const before = { ...item };
+            const updated = await updateInventoryItem(itemId(item), {
+              inspectionStatus: 'ACCEPTED',
+              acceptanceStatus: 'ACCEPTED',
+              qualityStatus: 'ACCEPTED',
+              qualitySource: 'explicit',
+            });
+            await logInventoryAdjustment(before, updated, 'qualityAcceptance', 'Material accepted by Quality from Inventory page');
+          }));
+          closeModal();
+          showToast(`${pending.length} material(is) aceito(s) pela Qualidade.`, 'success');
+          await rerender(true);
+        },
+      },
+    ],
+  });
+}
+
 function renderToolbar(items, state, rerender) {
   const selected = selectedItems(items, state);
   const onGenerateMaterialCoupon = state.options?.onGenerateMaterialCoupon;
   const toolbar = el('section', 'inventory-toolbar');
-  const add = el('button', 'btn btn-secondary', 'Add item');
+  const primary = el('div', 'inventory-toolbar-primary');
+  const contextual = el('div', 'inventory-toolbar-contextual');
+  const add = el('button', 'btn btn-secondary', 'Adicionar item');
   add.type = 'button';
   add.addEventListener('click', () => openAddItemModal(state, rerender));
 
-  const edit = el('button', 'btn btn-ghost', 'Edit selected');
+  const edit = el('button', 'btn btn-ghost', 'Editar');
   edit.type = 'button';
   edit.disabled = selected.length !== 1;
   edit.addEventListener('click', () => {
     if (selected.length === 1) openEditItemModal(selected[0], rerender);
   });
 
-  const remove = el('button', 'btn btn-critical', 'Delete selected');
+  const remove = el('button', 'btn btn-ghost inventory-delete-action', 'Excluir');
   remove.type = 'button';
   remove.disabled = selected.length < 1;
   remove.addEventListener('click', () => {
     if (selected.length) openDeleteDialog(selected, state, rerender);
   });
 
-  const setStatus = el('button', 'btn btn-primary', 'Set status');
+  const setStatus = el('button', 'btn btn-ghost', 'Alterar status');
   setStatus.type = 'button';
   setStatus.disabled = selected.length < 1;
   setStatus.addEventListener('click', () => {
     if (selected.length) openStatusModal(selected, rerender);
   });
 
-  const clear = el('button', 'btn btn-ghost', 'Clear selection');
+  const clear = el('button', 'btn btn-ghost', 'Limpar seleção');
   clear.type = 'button';
   clear.disabled = selected.length < 1;
   clear.addEventListener('click', () => {
@@ -848,7 +958,7 @@ function renderToolbar(items, state, rerender) {
     rerender();
   });
 
-  const coupon = el('button', 'btn btn-secondary', 'Generate Material Coupon');
+  const coupon = el('button', 'btn btn-primary', 'Gerar Material Coupon');
   coupon.type = 'button';
   coupon.disabled = selected.length < 1 || !onGenerateMaterialCoupon;
   coupon.addEventListener('click', () => {
@@ -859,13 +969,38 @@ function renderToolbar(items, state, rerender) {
     onGenerateMaterialCoupon?.(selected);
   });
 
-  toolbar.append(add, edit, remove, setStatus, coupon, clear, el('span', 'inventory-selection-count', `${selected.length} selecionado(s)`));
+  const quality = el('button', 'btn btn-secondary', 'Aceitar qualidade');
+  quality.type = 'button';
+  quality.disabled = selected.length < 1;
+  quality.addEventListener('click', () => {
+    if (selected.length) openQualityAcceptanceModal(selected, rerender);
+  });
+
+  primary.append(add);
+  contextual.append(
+    el('span', 'inventory-selection-count', selected.length ? `${selected.length} selecionado(s)` : 'Selecione materiais para executar ações'),
+    coupon,
+    quality,
+    setStatus,
+    edit,
+    remove,
+    clear,
+  );
+  toolbar.append(primary, contextual);
   return toolbar;
 }
 
 function statusChip(item) {
   const status = getInventoryStatus(item);
   return el('span', `inventory-status-chip inventory-status-${status}`, status);
+}
+
+function qualityCell(item) {
+  const td = el('td');
+  const state = getInventoryQualityState(item);
+  const label = state === 'accepted' ? 'Aceito' : state === 'blocked' ? 'Bloqueado' : 'Pendente';
+  td.append(el('span', `inventory-quality-chip inventory-quality-${state}`, label));
+  return td;
 }
 
 function cell(value) {
@@ -889,9 +1024,9 @@ function fieldText(item, field) {
 }
 
 function dimensionString(item) {
-  const thickness = fieldValue(item, ['thkMm', 'thickness']) || '-';
-  const diameter = fieldValue(item, ['diaOdMm', 'od']) || '-';
-  const width = fieldValue(item, ['widthMm', 'width']) || '-';
+  const thickness = text(item.thicknessMm) || '-';
+  const diameter = text(item.diaMm) || '-';
+  const width = text(item.widthMm) || '-';
   const length = lengthValue(item) || '-';
   return `${thickness} x ${diameter} x ${width} x ${length}mm`;
 }
@@ -925,55 +1060,55 @@ const COLUMN_DEFINITIONS = Object.freeze({
   category: { key: 'category', title: 'Category', sortable: true, sortValue: (item) => getInventoryCategoryKey(item), render: (item) => textCell(getInventoryCategoryKey(item)) },
   materialDescription: { key: 'materialDescription', title: 'Material Description', sortable: true, sortValue: sortText('materialDescription'), render: descriptionCell },
   materialClassification: { key: 'materialClassification', title: 'Material Classification', sortable: true, sortValue: sortText('materialClassification'), render: (item) => textCell(fieldText(item, 'materialClassification')) },
-  material: { key: 'material', title: 'Material & Grade', sortable: true, sortValue: sortText('material'), render: (item) => textCell(fieldText(item, 'material')) },
+  materialGrade: { key: 'materialGrade', title: 'Material & Grade', sortable: true, sortValue: sortText('materialGrade'), render: (item) => textCell(fieldText(item, 'materialGrade')) },
   dimensions: { key: 'dimensions', title: 'Dimensions', sortable: false, render: (item) => textCell(dimensionString(item)) },
-  thickness: { key: 'thickness', title: 'Thk (mm)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'thickness')), render: (item) => textCell(fieldText(item, 'thickness')) },
-  od: { key: 'od', title: 'Dia. OD (mm)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'od')), render: (item) => textCell(fieldText(item, 'od')) },
-  width: { key: 'width', title: 'Width (mm)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'width')), render: (item) => textCell(fieldText(item, 'width')) },
-  length: { key: 'length', title: 'Length (mm)', sortable: true, sortValue: lengthValue, render: (item) => textCell(lengthValue(item) || '') },
-  unitOfMeasure: { key: 'unitOfMeasure', title: 'UOM', sortable: true, sortValue: sortText('unitOfMeasure'), render: (item) => textCell(fieldText(item, 'unitOfMeasure')) },
-  totalWeightKg: { key: 'totalWeightKg', title: 'Total Weight (KG)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'totalWeightKg')), render: (item) => textCell(fieldText(item, 'totalWeightKg')) },
+  thicknessMm: { key: 'thicknessMm', title: 'Thk (mm)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'thicknessMm')), render: (item) => textCell(fieldText(item, 'thicknessMm')) },
+  diaMm: { key: 'diaMm', title: 'Dia. OD (mm)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'diaMm')), render: (item) => textCell(fieldText(item, 'diaMm')) },
+  widthMm: { key: 'widthMm', title: 'Width (mm)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'widthMm')), render: (item) => textCell(fieldText(item, 'widthMm')) },
+  lengthMm: { key: 'lengthMm', title: 'Length (mm)', sortable: true, sortValue: lengthValue, render: (item) => textCell(lengthValue(item) || '') },
+  unit: { key: 'unit', title: 'UOM', sortable: true, sortValue: sortText('unit'), render: (item) => textCell(fieldText(item, 'unit')) },
+  weightKg: { key: 'weightKg', title: 'Total Weight (KG)', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'weightKg')), render: (item) => textCell(fieldText(item, 'weightKg')) },
   totalPoQty: { key: 'totalPoQty', title: 'Total PO Qty', className: 'inventory-quantity-column', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'totalPoQty')), render: (item) => quantityCell(fieldText(item, 'totalPoQty')) },
   receivedQty: { key: 'receivedQty', title: 'Received Qty', className: 'inventory-quantity-column', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'receivedQty')), render: (item) => quantityCell(fieldText(item, 'receivedQty')) },
   issuedQty: { key: 'issuedQty', title: 'Issued Qty', className: 'inventory-quantity-column', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'issuedQty')), render: (item) => quantityCell(fieldText(item, 'issuedQty')) },
   balanceQty: { key: 'balanceQty', title: 'Balance Qty', className: 'inventory-quantity-column', sortable: true, sortValue: (item) => numberValue(fieldText(item, 'balanceQty')), render: (item) => quantityCell(fieldText(item, 'balanceQty')) },
   vendor: { key: 'vendor', title: 'Vendor/Supplier', sortable: true, sortValue: sortText('vendor'), render: (item) => textCell(fieldText(item, 'vendor')) },
   poItemPo: { key: 'poItemPo', title: 'PO - Item PO', sortable: true, sortValue: sortText('poItemPo'), render: (item) => textCell(fieldText(item, 'poItemPo')) },
-  poNumber: { key: 'poNumber', title: 'PO Number', sortable: true, sortValue: sortText('poNumber'), render: (item) => textCell(fieldText(item, 'poNumber')) },
+  po: { key: 'po', title: 'PO Number', sortable: true, sortValue: sortText('po'), render: (item) => textCell(fieldText(item, 'po')) },
   poItem: { key: 'poItem', title: 'PO Item #', sortable: true, sortValue: sortText('poItem'), render: (item) => textCell(fieldText(item, 'poItem')) },
   poSubject: { key: 'poSubject', title: 'PO Subject', sortable: true, sortValue: sortText('poSubject'), render: (item) => textCell(fieldText(item, 'poSubject')) },
   sapCode: { key: 'sapCode', title: 'SAP Code', sortable: true, sortValue: sortText('sapCode'), render: (item) => textCell(fieldText(item, 'sapCode')) },
   regime: { key: 'regime', title: 'Regime', sortable: true, sortValue: sortText('regime'), render: (item) => textCell(fieldText(item, 'regime')) },
-  entryInvoice: { key: 'entryInvoice', title: 'Entry Invoice [NF]', sortable: true, sortValue: sortText('entryInvoice'), render: (item) => textCell(fieldText(item, 'entryInvoice')) },
+  nfArrival: { key: 'nfArrival', title: 'Entry Invoice [NF]', sortable: true, sortValue: sortText('nfArrival'), render: (item) => textCell(fieldText(item, 'nfArrival')) },
   receivedDate: { key: 'receivedDate', title: 'Received Date', sortable: true, sortValue: sortText('receivedDate'), render: (item) => textCell(fieldText(item, 'receivedDate')) },
   mrr: { key: 'mrr', title: 'MRR', sortable: true, sortValue: sortText('mrr'), render: (item) => textCell(fieldText(item, 'mrr')) },
   partNumber: { key: 'partNumber', title: 'Part Number', sortable: true, sortValue: sortText('partNumber'), render: (item) => textCell(fieldText(item, 'partNumber')) },
   serialNumber: { key: 'serialNumber', title: 'Serial Number', sortable: true, sortValue: sortText('serialNumber'), render: (item) => textCell(fieldText(item, 'serialNumber')) },
   mtcNumber: { key: 'mtcNumber', title: 'MTC Number', sortable: true, sortValue: sortText('mtcNumber'), render: (item) => textCell(fieldText(item, 'mtcNumber')) },
-  heat: { key: 'heat', title: 'Heat Number', sortable: true, sortValue: sortText('heat'), render: (item) => textCell(fieldText(item, 'heat')) },
-  mirNumber: { key: 'mirNumber', title: 'MIR Number', sortable: true, sortValue: sortText('mirNumber'), render: (item) => textCell(fieldText(item, 'mirNumber')) },
+  heatNo: { key: 'heatNo', title: 'Heat Number', sortable: true, sortValue: sortText('heatNo'), render: (item) => textCell(fieldText(item, 'heatNo')) },
+  mir: { key: 'mir', title: 'MIR Number', sortable: true, sortValue: sortText('mir'), render: (item) => textCell(fieldText(item, 'mir')) },
   inspectionStatus: { key: 'inspectionStatus', title: 'Inspection Status', sortable: true, sortValue: sortText('inspectionStatus'), render: (item) => textCell(fieldText(item, 'inspectionStatus')) },
   acceptanceStatus: { key: 'acceptanceStatus', title: 'Acceptance Status', sortable: true, sortValue: sortText('acceptanceStatus'), render: (item) => textCell(fieldText(item, 'acceptanceStatus')) },
-  storageLocation: { key: 'storageLocation', title: 'Storage Location', sortable: true, sortValue: sortText('storageLocation'), render: (item) => textCell(fieldText(item, 'storageLocation')) },
+  qualityStatus: { key: 'qualityStatus', title: 'Aceite da qualidade', sortable: true, sortValue: (item) => getInventoryQualityState(item), render: qualityCell },
+  location: { key: 'location', title: 'Storage Location', sortable: true, sortValue: sortText('location'), render: (item) => textCell(fieldText(item, 'location')) },
   locationZone: { key: 'locationZone', title: 'Location Zone', sortable: true, sortValue: sortText('locationZone'), render: (item) => textCell(fieldText(item, 'locationZone')) },
-  equipmentDesignation: { key: 'equipmentDesignation', title: 'Equipment', sortable: true, sortValue: sortText('equipmentDesignation'), render: (item) => textCell(fieldText(item, 'equipmentDesignation')) },
+  equipment: { key: 'equipment', title: 'Equipment', sortable: true, sortValue: sortText('equipment'), render: (item) => textCell(fieldText(item, 'equipment')) },
   colorCode: { key: 'colorCode', title: 'Color Code', sortable: true, sortValue: sortText('colorCode'), render: (item) => textCell(fieldText(item, 'colorCode')) },
   materialCouponNo: { key: 'materialCouponNo', title: 'Material Coupon No.', sortable: true, sortValue: sortText('materialCouponNo'), render: (item) => textCell(fieldText(item, 'materialCouponNo')) },
   exitDate: { key: 'exitDate', title: 'Exit Date', sortable: true, sortValue: sortText('exitDate'), render: (item) => textCell(fieldText(item, 'exitDate')) },
   exitInvoice: { key: 'exitInvoice', title: 'Exit Invoice [NF]', sortable: true, sortValue: sortText('exitInvoice'), render: (item) => textCell(fieldText(item, 'exitInvoice')) },
   rmvNo: { key: 'rmvNo', title: 'RMV No.', sortable: true, sortValue: sortText('rmvNo'), render: (item) => textCell(fieldText(item, 'rmvNo')) },
-  disponibilidade: { key: 'disponibilidade', title: 'Disponibilidade', sortable: true, sortValue: sortText('disponibilidade'), render: (item) => textCell(fieldText(item, 'disponibilidade')) },
-  comments: { key: 'comments', title: 'Comments', sortable: true, sortValue: sortText('comments'), render: (item) => textCell(fieldText(item, 'comments'), 'inventory-comments-cell') },
+  notes: { key: 'notes', title: 'Comments', sortable: true, sortValue: sortText('notes'), render: (item) => textCell(fieldText(item, 'notes'), 'inventory-comments-cell') },
   status: { key: 'status', title: 'Status', sortable: true, sortValue: (item) => getInventoryStatus(item), render: statusCell },
   actions: { key: 'actions', title: 'Actions', className: 'inventory-sticky-actions', sortable: false, render: actionsCell },
 });
 
 const COLUMN_VIEWS = Object.freeze({
-  essential: ['traceability', 'materialDescription', 'material', 'dimensions', 'heat', 'balanceQty', 'disponibilidade', 'storageLocation', 'status', 'actions'],
-  procurement: ['traceability', 'materialDescription', 'material', 'dimensions', 'heat', 'balanceQty', 'disponibilidade', 'storageLocation', 'vendor', 'poItemPo', 'poNumber', 'poItem', 'poSubject', 'sapCode', 'regime', 'entryInvoice', 'receivedDate', 'mrr', 'status', 'actions'],
-  quality: ['traceability', 'materialDescription', 'material', 'dimensions', 'heat', 'balanceQty', 'disponibilidade', 'storageLocation', 'partNumber', 'serialNumber', 'mtcNumber', 'mirNumber', 'inspectionStatus', 'acceptanceStatus', 'status', 'actions'],
-  location: ['traceability', 'materialDescription', 'material', 'dimensions', 'heat', 'balanceQty', 'disponibilidade', 'storageLocation', 'locationZone', 'equipmentDesignation', 'colorCode', 'status', 'actions'],
-  movement: ['traceability', 'materialDescription', 'material', 'dimensions', 'heat', 'balanceQty', 'disponibilidade', 'storageLocation', 'materialCouponNo', 'exitDate', 'exitInvoice', 'rmvNo', 'status', 'actions'],
+  essential: ['traceability', 'materialDescription', 'materialGrade', 'dimensions', 'heatNo', 'balanceQty', 'location', 'status', 'actions'],
+  procurement: ['traceability', 'materialDescription', 'materialGrade', 'dimensions', 'heatNo', 'balanceQty', 'location', 'vendor', 'poItemPo', 'po', 'poItem', 'poSubject', 'sapCode', 'regime', 'nfArrival', 'receivedDate', 'mrr', 'status', 'actions'],
+  quality: ['traceability', 'materialDescription', 'materialGrade', 'dimensions', 'heatNo', 'balanceQty', 'location', 'partNumber', 'serialNumber', 'mtcNumber', 'mir', 'inspectionStatus', 'acceptanceStatus', 'qualityStatus', 'status', 'actions'],
+  location: ['traceability', 'materialDescription', 'materialGrade', 'dimensions', 'heatNo', 'balanceQty', 'location', 'locationZone', 'equipment', 'colorCode', 'status', 'actions'],
+  movement: ['traceability', 'materialDescription', 'materialGrade', 'dimensions', 'heatNo', 'balanceQty', 'location', 'materialCouponNo', 'exitDate', 'exitInvoice', 'rmvNo', 'status', 'actions'],
   complete: [...EDIT_FIELDS.filter((field) => field !== 'status'), 'status', 'actions'],
 });
 
@@ -1091,6 +1226,14 @@ function renderTable(items, state, rerender) {
     });
     checkboxCell.append(checkbox);
 
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('input, button, a, label')) return;
+      const id = itemId(item);
+      if (state.selectedIds.has(id)) state.selectedIds.delete(id);
+      else state.selectedIds.add(id);
+      rerender();
+    });
+
     row.append(checkboxCell, ...columns.map((column) => column.render(item, state, rerender)));
     tbody.append(row);
   });
@@ -1133,9 +1276,28 @@ async function render(container, state) {
   titleBlock.append(
     el('p', 'eyebrow', 'Inventory'),
     el('h1', null, 'Inventario'),
-    el('p', 'text-muted', 'Manage available material, traceability and stock status before nesting.'),
+    el('p', 'text-muted', 'Estoque físico e rastreabilidade para Material Coupon, Cutting Sheet, RMV e Workpack.'),
   );
   const actions = el('div', 'page-actions');
+  const exportButton = el('button', 'btn btn-secondary');
+  exportButton.id = 'inventory-export-database-btn';
+  exportButton.type = 'button';
+  const exportIcon = el('span', 'material-symbols-outlined', 'download');
+  exportIcon.setAttribute('aria-hidden', 'true');
+  exportButton.append(exportIcon, el('span', null, 'Exportar Base Completa'));
+  exportButton.disabled = typeof state.options.onExportInventory !== 'function';
+  exportButton.addEventListener('click', async () => {
+    exportButton.disabled = true;
+    try {
+      await state.options.onExportInventory?.();
+      showToast('Base completa do inventário exportada.', 'success');
+    } catch (error) {
+      console.error(error);
+      showToast(error?.message || 'Não foi possível exportar a base do inventário.', 'error');
+    } finally {
+      exportButton.disabled = typeof state.options.onExportInventory !== 'function';
+    }
+  });
   const importButton = el('button', 'btn btn-primary', 'Importar Inventario');
   importButton.id = 'inventory-import-file-btn';
   importButton.type = 'button';
@@ -1146,7 +1308,7 @@ async function render(container, state) {
   fileInput.hidden = true;
   importButton.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => handleImport(fileInput, rerender));
-  actions.append(importButton, fileInput);
+  actions.append(exportButton, importButton, fileInput);
   header.append(titleBlock, actions);
 
   const workspace = el('section', 'inventory-page-workspace');
@@ -1158,10 +1320,12 @@ async function render(container, state) {
     renderTable(visibleItems, state, rerender),
   );
 
-  page.append(header, renderDashboard(items, state.selectedIds.size, visibleItems.length), workspace);
+  page.append(header, renderDashboard(items, state, visibleItems.length, rerender), workspace);
   const focusSnapshot = captureFocus(container);
+  const scrollSnapshot = captureScrollPosition(container);
   container.replaceChildren(page);
   restoreFocus(container, focusSnapshot);
+  restoreScrollPosition(container, scrollSnapshot);
 }
 
 export async function renderInventoryPage(container, options = {}) {

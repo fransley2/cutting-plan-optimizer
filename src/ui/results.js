@@ -4,6 +4,8 @@ import {
   getColorForPiece,
   getContrastTextColor,
 } from '../core/pieceColors.js';
+import { pieceNominalLengthMm, pieceSobremetalMm } from '../core/cuttingSheetPlanning.js';
+import { cuttingSheetBarPoItem } from '../core/cuttingSheetPresentation.js';
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -20,17 +22,23 @@ function kpiCard(label, value, accent = '') {
 
 const DEFAULT_REPORT_OPTIONS = Object.freeze({
   labels: Object.freeze({
-    sequence: false,
+    sequence: true,
     mark: true,
     pos: true,
     length: true,
   }),
   labelFontSizePt: 9,
-  useColors: true,
+  colorMode: 'ink',
+  useColors: false,
   includeSignatures: false,
 });
 
 function normalizeReportOptions(options = {}) {
+  const requestedColorMode = ['color', 'grayscale', 'ink'].includes(options.colorMode)
+    ? options.colorMode
+    : (Object.hasOwn(options, 'useColors')
+      ? (options.useColors === false ? 'grayscale' : 'color')
+      : DEFAULT_REPORT_OPTIONS.colorMode);
   return {
     ...DEFAULT_REPORT_OPTIONS,
     ...options,
@@ -38,10 +46,17 @@ function normalizeReportOptions(options = {}) {
       ...DEFAULT_REPORT_OPTIONS.labels,
       ...(options.labels || {}),
     },
-    labelFontSizePt: Number(options.labelFontSizePt) || DEFAULT_REPORT_OPTIONS.labelFontSizePt,
-    useColors: options.useColors !== false,
+    labelFontSizePt: Math.max(7, Math.min(12, Number(options.labelFontSizePt) || DEFAULT_REPORT_OPTIONS.labelFontSizePt)),
+    colorMode: requestedColorMode,
+    useColors: requestedColorMode === 'color',
     includeSignatures: options.includeSignatures === true,
   };
+}
+
+function pieceLengthLabel(piece) {
+  const nominal = pieceNominalLengthMm(piece);
+  const extra = pieceSobremetalMm(piece);
+  return extra ? `${safeToFixed(nominal, 0)} + ${safeToFixed(extra, 0)} mm SM` : `${safeToFixed(nominal, 0)} mm`;
 }
 
 function buildPieceLabel(piece, index, options) {
@@ -49,7 +64,7 @@ function buildPieceLabel(piece, index, options) {
   if (options.labels.sequence) labels.push(`#${index + 1}`);
   if (options.labels.mark && piece.mark) labels.push(piece.mark);
   if (options.labels.pos && piece.pos) labels.push(piece.pos);
-  if (options.labels.length) labels.push(`${safeToFixed(piece.length, 0)}mm`);
+  if (options.labels.length) labels.push(pieceLengthLabel(piece));
   return labels.length ? labels.join(' / ') : '';
 }
 
@@ -96,13 +111,24 @@ function renderBarSegments(bar, solution, colorMap, options) {
     const color = getColorForPiece(piece, colorMap);
     const textColor = getContrastTextColor(color);
     const labelText = buildPieceLabel(piece, index, options);
-    const shortLabel = labelText.length > 22 ? `${labelText.slice(0, 19)}...` : labelText;
+    const densityClass = width < 9 ? 'piece-label-narrow' : (width < 18 ? 'piece-label-compact' : 'piece-label-wide');
     const colorStyle = options.useColors
       ? `background:${color};color:${textColor};`
       : '';
+    const primaryLabels = [
+      options.labels.sequence ? `<b class="piece-label-sequence">#${index + 1}</b>` : '',
+      options.labels.mark && piece.mark ? `<span class="piece-label-mark">${escapeHtml(piece.mark)}</span>` : '',
+    ].filter(Boolean).join('');
+    const secondaryLabels = [
+      options.labels.pos && piece.pos ? `<span class="piece-label-pos">POS ${escapeHtml(piece.pos)}</span>` : '',
+      options.labels.length ? `<strong class="piece-label-measure">${escapeHtml(pieceLengthLabel(piece))}</strong>` : '',
+    ].filter(Boolean).join('');
 
-    barHTML += `<div class="piece" style="left:${pos.toFixed(3)}%;width:${width.toFixed(3)}%;${colorStyle}" title="${escapeHtml(`${piece.dwgNumber || ''} ${piece.mark || ''} ${piece.pos || ''}`)}">
-      <span class="piece-caption">${escapeHtml(shortLabel)}</span>
+    barHTML += `<div class="piece piece-tone-${index % 4} ${densityClass}" style="left:${pos.toFixed(3)}%;width:${width.toFixed(3)}%;${colorStyle}" title="${escapeHtml(labelText)}">
+      <span class="piece-caption">
+        ${primaryLabels ? `<span class="piece-label-primary">${primaryLabels}</span>` : ''}
+        ${secondaryLabels ? `<span class="piece-label-secondary">${secondaryLabels}</span>` : ''}
+      </span>
     </div>`;
     pos += width;
 
@@ -134,6 +160,11 @@ function renderLegend(container, pieces, colorMap) {
   title.textContent = 'Legenda de Pecas';
   wrapper.appendChild(title);
 
+  const description = document.createElement('p');
+  description.className = 'results-panel-description';
+  description.textContent = 'Identificacao visual consolidada das pecas alocadas no plano.';
+  wrapper.appendChild(description);
+
   const legend = document.createElement('div');
   legend.className = 'piece-legend compact';
 
@@ -150,7 +181,7 @@ function renderLegend(container, pieces, colorMap) {
       item.className = 'piece-legend-row';
       item.innerHTML = `
         <span class="piece-color-dot" style="background:${color};"></span>
-        <span><strong>${escapeHtml(piece.mark || '-')}</strong> / ${escapeHtml(piece.pos || '-')} / ${escapeHtml(piece.dwgNumber || '-')} / ${escapeHtml(piece.material || '-')} / ${escapeHtml(safeToFixed(piece.length, 0))}mm / x${escapeHtml(qty)}</span>`;
+        <span><strong>${escapeHtml(piece.mark || '-')}</strong> / ${escapeHtml(piece.pos || '-')} / ${escapeHtml(piece.dwgNumber || '-')} / ${escapeHtml(piece.material || '-')} / ${escapeHtml(safeToFixed(pieceNominalLengthMm(piece), 0))}mm${pieceSobremetalMm(piece) ? ` + ${escapeHtml(safeToFixed(pieceSobremetalMm(piece), 0))}mm SM` : ''} / x${escapeHtml(qty)}</span>`;
       legend.appendChild(item);
     });
     wrapper.appendChild(legend);
@@ -164,6 +195,7 @@ function renderBarsTable(container, solution) {
   wrapper.className = 'results-panel';
   wrapper.innerHTML = `
     <h3>Tabela de Barras</h3>
+    <p class="results-panel-description">Conferencia tecnica do material utilizado, rastreabilidade e aproveitamento por barra.</p>
     <div class="table-wrap">
       <table class="data-table">
         <thead>
@@ -177,10 +209,10 @@ function renderBarsTable(container, solution) {
               <tr>
                 <td>${index + 1}</td>
                 <td>${escapeHtml(bar.po || '-')}</td>
-                <td>${escapeHtml(bar.item || '-')}</td>
+                <td>${escapeHtml(cuttingSheetBarPoItem(bar) || '-')}</td>
                 <td>${escapeHtml(bar.description || '-')}</td>
                 <td>${escapeHtml(bar.materialGrade || '-')}</td>
-                <td>${escapeHtml(bar.heatNumber || '-')}</td>
+                <td>${escapeHtml(bar.heatNo || '-')}</td>
                 <td>${escapeHtml(bar.traceability || '-')}</td>
                 <td>${escapeHtml(safeToFixed(bar.originalLength, 0))}</td>
                 <td>${escapeHtml((bar.pieces || []).length)}</td>
@@ -201,6 +233,7 @@ function renderUnplacedTable(container, solution) {
   wrapper.className = 'results-panel results-panel-critical';
   wrapper.innerHTML = `
     <h3>Pecas Nao Alocadas</h3>
+    <p class="results-panel-description">Itens que exigem revisao de estoque, material ou comprimento antes da liberacao.</p>
     <div class="table-wrap">
       <table class="data-table">
         <thead><tr><th>DWG</th><th>Mark</th><th>POS</th><th>Material</th><th>Comp.</th><th>Prioridade</th></tr></thead>
@@ -211,7 +244,7 @@ function renderUnplacedTable(container, solution) {
               <td>${escapeHtml(piece.mark || '-')}</td>
               <td>${escapeHtml(piece.pos || '-')}</td>
               <td>${escapeHtml(piece.material || '-')}</td>
-              <td>${escapeHtml(safeToFixed(piece.length, 0))}</td>
+              <td>${escapeHtml(safeToFixed(pieceNominalLengthMm(piece), 0))}${pieceSobremetalMm(piece) ? ` + ${escapeHtml(safeToFixed(pieceSobremetalMm(piece), 0))} SM` : ''}</td>
               <td>${escapeHtml(piece.priority || '-')}</td>
             </tr>`).join('')}
         </tbody>
@@ -247,6 +280,8 @@ export function renderCutSheets(container, solution, reportOptions = {}) {
   const options = normalizeReportOptions(reportOptions);
   container.replaceChildren();
   container.classList.toggle('report-monochrome', !options.useColors);
+  container.classList.toggle('report-grayscale', options.colorMode === 'grayscale');
+  container.classList.toggle('report-ink', options.colorMode === 'ink');
   container.style.setProperty('--report-label-font-size', `${options.labelFontSizePt}pt`);
   const allPlacedPieces = (solution.stockUsed || []).flatMap((bar) => bar.pieces || []);
   const colorMap = buildPieceColorMap(allPlacedPieces);
@@ -257,6 +292,11 @@ export function renderCutSheets(container, solution, reportOptions = {}) {
   const barsTitle = document.createElement('h3');
   barsTitle.textContent = 'Diagrama Visual das Barras';
   barsPanel.appendChild(barsTitle);
+
+  const barsDescription = document.createElement('p');
+  barsDescription.className = 'results-panel-description';
+  barsDescription.textContent = 'Sequencia de corte, perdas de kerf, trims e sobra prevista por material de origem.';
+  barsPanel.appendChild(barsDescription);
 
   const stack = document.createElement('div');
   stack.className = 'results-bars-stack';
@@ -270,10 +310,10 @@ export function renderCutSheets(container, solution, reportOptions = {}) {
       <div class="flex-between cut-sheet-header">
         <div>
           <strong>Barra ${idx + 1}</strong>
-          <div class="text-muted">${escapeHtml(bar.description || '')} / ${escapeHtml(bar.materialGrade || '')} / Heat ${escapeHtml(bar.heatNumber || 'N/A')}</div>
+          <div class="text-muted">${escapeHtml(bar.materialDescription || bar.description || '')} / ${escapeHtml(bar.materialGrade || '')} / Heat ${escapeHtml(bar.heatNo || 'N/A')}</div>
         </div>
         <div class="text-muted cut-sheet-trace">
-          PO ${escapeHtml(bar.po || 'N/A')} / Item ${escapeHtml(bar.item || 'N/A')}<br>Trace: ${escapeHtml(bar.traceability || 'N/A')}
+          PO ${escapeHtml(bar.po || 'N/A')} / Item ${escapeHtml(cuttingSheetBarPoItem(bar) || 'N/A')}<br>Trace: ${escapeHtml(bar.traceability || 'N/A')}
         </div>
       </div>
       <div class="stock-bar">${renderBarSegments(bar, solution, colorMap, options)}</div>

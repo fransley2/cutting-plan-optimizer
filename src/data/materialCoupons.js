@@ -6,6 +6,8 @@ const STORE_NAME = 'materialCoupons';
 export const MATERIAL_COUPON_STATUS = Object.freeze({
   DRAFT: 'draft',
   ISSUED: 'issued',
+  DISPATCHED: 'dispatched',
+  RECEIVED: 'received',
   CANCELLED: 'cancelled',
   CLOSED: 'closed',
 });
@@ -30,28 +32,50 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function normalizeMaterialCoupon(input = {}, existing = null) {
+function linesWithStableIds(lines, existingLines = []) {
+  return arrayValue(lines).map((line, index) => ({
+    ...(line && typeof line === 'object' ? structuredClone(line) : {}),
+    id: text(line?.id) || text(existingLines[index]?.id) || createId(),
+  }));
+}
+
+function metadataWithStableLineIds(value, existing = {}) {
+  const metadata = objectValue(value);
+  if (!metadata.coupon || typeof metadata.coupon !== 'object') return metadata;
+  const existingLines = Array.isArray(existing?.coupon?.lines) ? existing.coupon.lines : [];
+  return {
+    ...metadata,
+    coupon: {
+      ...metadata.coupon,
+      lines: linesWithStableIds(metadata.coupon.lines, existingLines),
+    },
+  };
+}
+
+export function normalizeMaterialCoupon(input = {}, existing = null) {
+  const metadata = metadataWithStableLineIds(input.metadata, existing?.metadata);
   return {
     id: text(input.id) || existing?.id || createId(),
     projectId: text(input.projectId),
     number: text(input.number),
     status: text(input.status) || MATERIAL_COUPON_STATUS.DRAFT,
-    cuttingPackageId: text(input.cuttingPackageId),
+    workpackId: text(input.workpackId),
     planId: text(input.planId),
     issuedAt: text(input.issuedAt),
     issuedBy: text(input.issuedBy),
     createdAt: text(input.createdAt) || existing?.createdAt || nowIso(),
     updatedAt: nowIso(),
-    createdBy: text(input.createdBy),
+    createdBy: text(input.createdBy) || text(existing?.createdBy),
+    createdByName: text(input.createdByName) || text(existing?.createdByName),
     updatedBy: text(input.updatedBy),
-    items: arrayValue(input.items),
+    items: linesWithStableIds(input.items, existing?.items),
     signatures: arrayValue(input.signatures),
-    metadata: objectValue(input.metadata),
+    metadata,
   };
 }
 
 function matchesFilters(record, filters = {}) {
-  const fields = ['projectId', 'status', 'number', 'cuttingPackageId'];
+  const fields = ['projectId', 'status', 'number', 'workpackId'];
   return fields.every((field) => filters[field] == null || record[field] === String(filters[field]));
 }
 

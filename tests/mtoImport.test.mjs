@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import test from 'node:test';
 import {
   decodeMtoTextFromArrayBuffer,
+  mtoColumnMappingFromSuggestions,
   normalizeMtoHeaderKey,
   parseMtoCsvText,
   normalizeMtoRow,
   parseMtoRows,
+  suggestMtoColumnMappings,
   validateMtoItem,
 } from '../src/data/mtoImport.js';
 
@@ -59,6 +62,40 @@ assert.equal(normalized.metadata.engineering.ABSW, 'ABSW1');
 const replacementHeader = normalizeMtoRow({ 'DrawingN�': 'D-1', Mark: 'M-1', Position: 'P-1', Quantity: '1', Material: 'A36', 'Length/mm': '1000' });
 assert.equal(replacementHeader.drawing, 'D-1');
 
+test('suggests and applies the Shop Drawing MTO column mapping', () => {
+  const sourceRow = {
+    'Shop Drawing Name': '263221-SGU-JU-PI-DA-001',
+    'Shop Drawing Revision Number': '0',
+    SPOOL: 'AS01JU01',
+    Position: '1A',
+    Qty: '1',
+    'Material Description Detail': 'TUBO D168,3 x 19,1',
+    'Lenght (mm)': '1742,69',
+    'IDENT (Mark for Gemapi)': 'PP-SD-168-19',
+    'Line Specification': 'DNV25Cr',
+    Notes: '31-WJ-10-1010',
+    Type: 'PIPE',
+    'Prefabrication / Erection': 'FAB',
+    'Discipline (Piping)': 'PIPING',
+  };
+  const suggestions = suggestMtoColumnMappings(Object.keys(sourceRow));
+  const mapping = mtoColumnMappingFromSuggestions(suggestions);
+  assert.equal(mapping.drawing, 'Shop Drawing Name');
+  assert.equal(mapping.mark, 'SPOOL');
+  assert.equal(mapping.cutLength, 'Lenght (mm)');
+  assert.equal(mapping.material, 'Line Specification');
+  assert.equal(suggestions.find(({ field }) => field === 'material').confidence, 'review');
+
+  const item = normalizeMtoRow(sourceRow, { columnMapping: mapping });
+  assert.equal(item.drawing, '263221-SGU-JU-PI-DA-001');
+  assert.equal(item.mark, 'AS01JU01');
+  assert.equal(item.description, 'TUBO D168,3 x 19,1');
+  assert.equal(item.cutLength, 1742.69);
+  assert.equal(item.material, 'DNV25Cr');
+  assert.equal(item.line, '31-WJ-10-1010');
+  assert.deepEqual(validateMtoItem(item), []);
+});
+
 const withUnit = normalizeMtoRow({ Drawing: 'D', Mark: 'M', Position: 'P', Quantity: 2, Material: 'A36', 'Length/mm': '1500 mm' });
 assert.equal(withUnit.cutLength, 1500);
 assert.equal(withUnit.requiredLength, 3000);
@@ -104,5 +141,90 @@ assert.equal(JSON.stringify(inputRows), before);
 const engineeringParsed = parseMtoRows(rows);
 assert.equal(engineeringParsed.acceptedItems.length, 1);
 assert.equal(engineeringParsed.rejectedItems.length, 0);
+
+const validBaseRow = {
+  Drawing: 'D-LOCALIZED',
+  Mark: 'M-LOCALIZED',
+  Position: 'P-LOCALIZED',
+  Quantity: '1',
+  Material: 'A36',
+  'Length/mm': '1000',
+};
+
+test('normalizes localized MTO engineering measurements and preserves parsing evidence', () => {
+  const localized = normalizeMtoRow({
+    ...validBaseRow,
+    Quantity: '1.234,56',
+    'Length/mm': '6 000',
+    'Weight/kg': '12,5',
+    'ExternalSurface/m2': '1,234.56',
+    'PaintingSurface/m2': `6\u00A0000`,
+  });
+
+  assert.equal(localized.qty, 1234.56);
+  assert.equal(localized.cutLength, 6000);
+  assert.equal(localized.weightKg, 12.5);
+  assert.equal(localized.externalSurfaceM2, 1234.56);
+  assert.equal(localized.paintingSurfaceM2, 6000);
+  assert.equal(localized.requiredLength, 1234.56 * 6000);
+  assert.deepEqual(localized.metadata.numericParsing.qty, {
+    rawValue: '1.234,56', parsedValue: 1234.56, valid: true, detectedFormat: 'pt-BR',
+  });
+  assert.equal(localized.metadata.originalRow.Quantity, '1.234,56');
+});
+
+test('accepts a cut length followed by a unit', () => {
+  const item = normalizeMtoRow({ ...validBaseRow, 'Length/mm': '6000 mm' });
+  assert.equal(item.cutLength, 6000);
+  assert.equal(item.metadata.numericParsing.cutLength.rawValue, '6000 mm');
+  assert.equal(item.metadata.numericParsing.cutLength.valid, true);
+});
+
+test('distinguishes invalid, missing, zero, and negative quantity values', () => {
+  const cases = [
+    ['abc', null, 'Invalid quantity format'],
+    ['', null, 'Missing quantity'],
+    ['0', 0, 'Invalid quantity'],
+    ['-2', -2, 'Invalid quantity'],
+  ];
+  cases.forEach(([rawValue, parsedValue, expectedError]) => {
+    const item = normalizeMtoRow({ ...validBaseRow, Quantity: rawValue });
+    assert.equal(item.qty, parsedValue);
+    assert.deepEqual(validateMtoItem(item).filter((error) => error.includes('quantity')), [expectedError]);
+  });
+});
+
+test('distinguishes invalid and missing cut length values without calculating required length', () => {
+  const invalid = normalizeMtoRow({ ...validBaseRow, 'Length/mm': 'abc' });
+  const missing = normalizeMtoRow({ ...validBaseRow, 'Length/mm': '' });
+  assert.equal(invalid.cutLength, null);
+  assert.equal(invalid.requiredLength, null);
+  assert.equal(invalid.metadata.numericParsing.cutLength.rawValue, 'abc');
+  assert.equal(invalid.metadata.numericParsing.cutLength.valid, false);
+  assert.ok(validateMtoItem(invalid).includes('Invalid cut length format'));
+  assert.ok(validateMtoItem(missing).includes('Missing cut length'));
+  assert.equal(validateMtoItem(missing).includes('Invalid cut length format'), false);
+});
+
+test('parses an explicit localized required length and strictly normalizes source row numbers', () => {
+  const explicit = normalizeMtoRow(validBaseRow, { requiredLength: '1.234,56', sourceRowNumber: '7' });
+  assert.equal(explicit.requiredLength, 1234.56);
+  assert.equal(explicit.metadata.numericParsing.requiredLength.detectedFormat, 'pt-BR');
+  assert.equal(explicit.sourceRowNumber, 7);
+  assert.equal(normalizeMtoRow(validBaseRow, { sourceRowNumber: '1,000' }).sourceRowNumber, 0);
+  assert.equal(normalizeMtoRow(validBaseRow, { sourceRowNumber: '7.5' }).sourceRowNumber, 0);
+  assert.equal(normalizeMtoRow(validBaseRow, { sourceRowNumber: '7 mm' }).sourceRowNumber, 0);
+});
+
+test('keeps a file with any invalid numeric line in the rejected set', () => {
+  const result = parseMtoRows([
+    validBaseRow,
+    { ...validBaseRow, Mark: 'M-INVALID', Quantity: 'abc' },
+  ]);
+  assert.equal(result.acceptedItems.length, 1);
+  assert.equal(result.rejectedItems.length, 1);
+  assert.equal(result.batch.rejectedCount, 1);
+  assert.ok(result.rejectedItems[0].validationErrors.includes('Invalid quantity format'));
+});
 
 console.log('mtoImport tests passed');

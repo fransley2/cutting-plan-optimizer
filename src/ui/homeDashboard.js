@@ -1,218 +1,134 @@
-import { formatRecentPlans } from '../data/planStats.js';
+import { buildOperationalReadiness, searchOperationalRecords } from '../core/operationalReadiness.js';
+import { t } from '../i18n/index.js';
 
-function icon(name, className = '') {
-  const span = document.createElement('span');
-  span.className = `material-symbols-outlined ${className}`.trim();
-  span.textContent = name;
-  return span;
+function node(tag, className = '', value = '') {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (value !== '') element.textContent = String(value);
+  return element;
 }
 
-function actionCard({ iconName, tone, title, description, disabled = false, onClick }) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = `home-action-card tone-${tone}`;
-  button.disabled = disabled;
-  if (onClick) button.addEventListener('click', onClick);
-
-  const iconBox = document.createElement('span');
-  iconBox.className = 'home-action-icon';
-  iconBox.appendChild(icon(iconName));
-
-  const titleEl = document.createElement('strong');
-  titleEl.textContent = title;
-
-  const desc = document.createElement('span');
-  desc.textContent = description;
-
-  button.append(iconBox, titleEl, desc);
-  return button;
+function text(value, fallback = '') {
+  const result = value == null ? '' : String(value).trim();
+  return result || fallback;
 }
 
-function pivotBar() {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'home-pivot-bar';
+function icon(name) { return node('span', 'material-symbols-outlined', name); }
+function percent(value) { return `${Math.round(Math.max(0, Number(value) || 0) * 100)}%`; }
 
-  const recent = document.createElement('button');
-  recent.type = 'button';
-  recent.className = 'pivot-item active';
-  recent.textContent = 'Recente';
-
-  const favorites = document.createElement('button');
-  favorites.type = 'button';
-  favorites.className = 'pivot-item';
-  favorites.disabled = true;
-  favorites.textContent = 'Favoritos';
-
-  wrapper.append(recent, favorites);
-  return wrapper;
-}
-
-function utilizationBadge(plan) {
-  const badge = document.createElement('span');
-  badge.className = `status-chip status-${plan.utilizationTone}`;
-  badge.textContent = plan.utilizationLabel;
-  return badge;
-}
-
-function renderPlanRows(tbody, rows, { onLoadPlan, onDeletePlan, refresh }) {
-  tbody.replaceChildren();
-
-  rows.forEach((plan) => {
-    const tr = document.createElement('tr');
-
-    const nameCell = document.createElement('td');
-    const nameWrap = document.createElement('span');
-    nameWrap.className = 'home-plan-name';
-    nameWrap.append(icon('description'), document.createTextNode(plan.name));
-    nameCell.appendChild(nameWrap);
-
-    const modifiedCell = document.createElement('td');
-    modifiedCell.textContent = plan.modified;
-
-    const projectCell = document.createElement('td');
-    projectCell.textContent = plan.projectClient;
-
-    const utilizationCell = document.createElement('td');
-    utilizationCell.appendChild(utilizationBadge(plan));
-
-    const actionsCell = document.createElement('td');
-    actionsCell.className = 'home-table-actions';
-
-    const loadButton = document.createElement('button');
-    loadButton.type = 'button';
-    loadButton.className = 'icon-action';
-    loadButton.title = 'Carregar plano';
-    loadButton.appendChild(icon('visibility'));
-    loadButton.addEventListener('click', () => onLoadPlan(plan.name));
-
-    const deleteButton = document.createElement('button');
-    deleteButton.type = 'button';
-    deleteButton.className = 'icon-action icon-action-critical';
-    deleteButton.title = 'Excluir plano';
-    deleteButton.appendChild(icon('delete'));
-    deleteButton.addEventListener('click', async () => {
-      if (!confirm(`Excluir o plano "${plan.name}"?`)) return;
-      await onDeletePlan(plan.name);
-      await refresh();
-    });
-
-    actionsCell.append(loadButton, deleteButton);
-    tr.append(nameCell, modifiedCell, projectCell, utilizationCell, actionsCell);
-    tbody.appendChild(tr);
-  });
-}
-
-function emptyState(onNewPlan) {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'home-empty-state';
-
-  const title = document.createElement('strong');
-  title.textContent = 'Nenhum plano ainda. Crie o primeiro.';
-
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn-primary';
-  button.textContent = 'Novo plano de corte';
-  button.addEventListener('click', onNewPlan);
-
-  wrapper.append(title, button);
-  return wrapper;
-}
-
-function recentPlansSection({ getPlans, onLoadPlan, onDeletePlan, onNewPlan }) {
-  const section = document.createElement('section');
-  section.className = 'home-recent';
-
-  const header = document.createElement('div');
-  header.className = 'home-recent-header';
-  header.appendChild(pivotBar());
-
-  const tableWrap = document.createElement('div');
-  tableWrap.className = 'table-wrap home-table-wrap';
-
-  const table = document.createElement('table');
-  table.className = 'data-table home-plans-table';
-  const thead = document.createElement('thead');
-  const headerRow = document.createElement('tr');
-  ['Nome', 'Modificado', 'Projeto / Cliente', 'Aproveitamento', 'Acoes'].forEach((label) => {
-    const th = document.createElement('th');
-    th.textContent = label;
-    headerRow.appendChild(th);
-  });
-  thead.appendChild(headerRow);
-
-  const tbody = document.createElement('tbody');
-  table.append(thead, tbody);
-  tableWrap.appendChild(table);
-
-  const loading = document.createElement('p');
-  loading.className = 'text-muted home-loading';
-  loading.textContent = 'Carregando...';
-
-  async function refresh() {
-    section.querySelector('.home-empty-state')?.remove();
-    tableWrap.classList.add('hidden');
-    if (!section.contains(loading)) section.appendChild(loading);
-
-    const rows = formatRecentPlans(await getPlans());
-    loading.remove();
-
-    if (rows.length === 0) {
-      section.appendChild(emptyState(onNewPlan));
-      return;
-    }
-
-    tableWrap.classList.remove('hidden');
-    renderPlanRows(tbody, rows, { onLoadPlan, onDeletePlan, refresh });
+function contextHeader(project, activeProjectName) {
+  const header = node('header', 'dashboard-readiness-header');
+  const copy = node('div');
+  copy.append(node('p', 'eyebrow', 'Material Readiness'), node('h1', '', 'CAN WE FABRICATE TODAY?'));
+  copy.append(node('p', 'text-muted', activeProjectName ? `${activeProjectName} · posição operacional por TAG` : 'Todos os projetos · selecione um projeto ativo para uma decisão operacional precisa'));
+  header.append(copy);
+  if (project) {
+    const scope = node('div', 'dashboard-scope-badge');
+    scope.append(icon('business_center'), node('span', '', [project.shortCode || project.code, project.client].filter(Boolean).join(' · ') || project.name));
+    header.append(scope);
   }
+  return header;
+}
 
-  section.append(header, tableWrap);
-  refresh();
+function searchBox(data, options) {
+  const section = node('section', 'dashboard-universal-search');
+  const label = node('label', 'dashboard-search-field');
+  label.append(icon('search'));
+  const input = node('input');
+  input.type = 'search';
+  input.placeholder = 'Search anything: TAG, IDENT CODE, Traceability, Heat, PO, MTO, Workpack, Coupon, Cutting Sheet...';
+  input.setAttribute('aria-label', 'Search anything');
+  label.append(input);
+  const results = node('div', 'dashboard-search-results hidden');
+  input.addEventListener('input', () => {
+    const matches = searchOperationalRecords(data, input.value, 8);
+    results.replaceChildren();
+    results.classList.toggle('hidden', input.value.trim().length < 2);
+    if (input.value.trim().length < 2) return;
+    if (!matches.length) { results.append(node('p', 'text-muted', 'Nenhum registro rastreável encontrado.')); return; }
+    matches.forEach((match) => {
+      const button = node('button', 'dashboard-search-result');
+      button.type = 'button';
+      const type = node('span', 'dashboard-search-type', match.type);
+      const copy = node('span'); copy.append(node('strong', '', match.title), node('small', 'text-muted', match.subtitle || match.entityId));
+      button.append(type, copy, icon('arrow_forward'));
+      button.addEventListener('click', () => match.type === 'Equipment'
+        ? options.onOpenEquipment?.(match.entityId, match.tag)
+        : options.onNavigate?.(match.phase, match));
+      results.append(button);
+    });
+  });
+  section.append(label, results);
   return section;
 }
 
-export function renderHomeDashboard(container, options) {
-  container.replaceChildren();
+function kpiCard(label, value, caption, tone = '', iconName = 'monitoring') {
+  const card = node('article', `dashboard-readiness-kpi ${tone}`.trim());
+  const heading = node('div', 'dashboard-readiness-kpi-heading'); heading.append(icon(iconName), node('span', '', label));
+  card.append(heading, node('strong', '', value), node('small', 'text-muted', caption));
+  return card;
+}
 
-  const header = document.createElement('div');
-  header.className = 'home-header';
-  const title = document.createElement('h1');
-  title.textContent = 'Bem-vindo ao Portal de Fabricacao';
-  const subtitle = document.createElement('p');
-  subtitle.className = 'text-muted';
-  subtitle.textContent = 'Centralize planos de corte, inventario e resultados de nesting em um fluxo auditavel.';
-  header.append(title, subtitle);
-
-  const actions = document.createElement('div');
-  actions.className = 'home-actions-grid';
-  actions.append(
-    actionCard({
-      iconName: 'add_box',
-      tone: 'primary',
-      title: 'Novo plano de corte',
-      description: 'Crie uma nova ordem de servico e otimize o material.',
-      onClick: options.onNewPlan,
-    }),
-    actionCard({
-      iconName: 'upload_file',
-      tone: 'secondary',
-      title: 'Importar inventario',
-      description: 'Carregue arquivos Excel ou CSV para atualizar o estoque.',
-      onClick: options.onImportInventory,
-    }),
-    actionCard({
-      iconName: 'analytics',
-      tone: 'tertiary',
-      title: 'Ver resultados',
-      description: options.hasResults ? 'Revise o ultimo plano calculado.' : 'Calcule um plano primeiro.',
-      disabled: !options.hasResults,
-      onClick: options.onViewResults,
-    })
+function readinessKpis(readiness) {
+  const grid = node('div', 'dashboard-readiness-kpis');
+  grid.append(
+    kpiCard('Material Availability', percent(readiness.materialAvailability), 'Cobertura da demanda MTO', readiness.materialAvailability >= 0.999999 ? 'positive' : 'attention', 'inventory_2'),
+    kpiCard('Critical Items', readiness.criticalItems, 'Sem cobertura suficiente', readiness.criticalItems ? 'critical' : 'positive', 'error'),
+    kpiCard('PO Delayed', readiness.delayedPurchaseOrders, 'Itens com entrega vencida', readiness.delayedPurchaseOrders ? 'attention' : '', 'local_shipping'),
+    kpiCard('Ready Workpacks', readiness.readyWorkpacks, 'Workpacks ligados a TAG pronta', 'positive', 'workspaces'),
+    kpiCard('Ready Equipment', readiness.readyEquipments, 'TAGs prontas para fabricar', 'positive', 'precision_manufacturing'),
+    kpiCard('Blocked Equipment', readiness.blockedEquipments, 'TAGs com item crítico', readiness.blockedEquipments ? 'critical' : '', 'block'),
   );
+  return grid;
+}
 
-  container.append(
-    header,
-    actions,
-    recentPlansSection(options)
-  );
+const STATUS_LABELS = Object.freeze({ READY: 'Ready', PARTIAL: 'Partial', BLOCKED: 'Blocked', NOT_PLANNED: 'Not planned' });
+
+function equipmentReadinessTable(readiness, options) {
+  const section = node('section', 'dashboard-panel dashboard-equipment-readiness');
+  const header = node('div', 'card-header');
+  const copy = node('div'); copy.append(node('h2', '', 'Equipment Readiness'), node('p', 'text-muted', 'Decisão por TAG física. Abra uma linha para acessar o contexto operacional do equipamento.'));
+  header.append(copy);
+  const wrap = node('div', 'table-wrap');
+  const table = node('table', 'data-table');
+  const thead = node('thead'); const heading = node('tr');
+  ['TAG', 'Equipment', 'Availability', 'Demand', 'Critical items', 'Status'].forEach((label) => heading.append(node('th', '', label)));
+  thead.append(heading);
+  const tbody = node('tbody');
+  readiness.equipmentRows.forEach((item) => {
+    const row = node('tr', 'dashboard-equipment-row'); row.tabIndex = 0;
+    const status = node('span', `readiness-status status-${item.status.toLowerCase()}`); status.append(node('i'), node('span', '', t(STATUS_LABELS[item.status] || item.status)));
+    row.append(node('td', 'dashboard-tag-cell', item.tag), node('td', '', item.equipmentName || '—'), node('td', 'numeric', percent(item.availability)), node('td', 'numeric', item.demandItems), node('td', 'numeric', item.criticalItems), node('td'));
+    row.lastChild.append(status);
+    const open = () => options.onOpenEquipment?.(item.equipmentId, item.tag);
+    row.addEventListener('click', open);
+    row.addEventListener('keydown', (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); } });
+    tbody.append(row);
+  });
+  if (!readiness.equipmentRows.length) {
+    const row = node('tr'); const empty = node('td', 'empty-row', t('No TAG with MTO demand is available for evaluation.')); empty.colSpan = 6; row.append(empty); tbody.append(row);
+  }
+  table.append(thead, tbody); wrap.append(table); section.append(header, wrap); return section;
+}
+
+function loadingState() { return node('p', 'text-muted dashboard-loading', 'Calculando disponibilidade por TAG...'); }
+function errorState() { return node('p', 'text-muted dashboard-error', 'Não foi possível calcular a prontidão operacional.'); }
+
+export async function renderHomeDashboard(container, options = {}) {
+  container.replaceChildren(loadingState());
+  try {
+    const data = await options.loadDashboardData?.() || {};
+    const activeProjectName = text(options.activeProjectName);
+    const project = (data.projects || []).find((item) => text(item?.name || item?.project || item?.projectName) === activeProjectName);
+    const readiness = buildOperationalReadiness(data);
+    container.replaceChildren(
+      contextHeader(project, activeProjectName),
+      searchBox(data, options),
+      readinessKpis(readiness),
+      equipmentReadinessTable(readiness, options),
+    );
+  } catch (error) {
+    console.error(error);
+    container.replaceChildren(errorState());
+  }
 }

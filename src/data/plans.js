@@ -1,27 +1,60 @@
 import { createEntityStore } from './entityStore.js';
+import { getDB } from './database.js';
+import { idbTransaction } from './idb.js';
 
 const LEGACY_LOCALSTORAGE_KEY = 'cuttingPlans_v1';
+const STORE_NAME = 'plans';
 const store = createEntityStore('plans');
 
-let migrated = false;
+let migrationPromise = null;
 
-async function ensureMigrated() {
-  if (migrated) return;
-  migrated = true;
+function parseLegacyPlans(raw) {
+  const legacyPlans = JSON.parse(raw);
+  if (!legacyPlans || typeof legacyPlans !== 'object' || Array.isArray(legacyPlans)) {
+    throw new TypeError('Legacy Plans data must be an object keyed by plan name.');
+  }
 
+  const migratedAt = new Date().toISOString();
+  return Object.entries(legacyPlans).map(([name, data]) => {
+    if (!name) throw new TypeError('Legacy Plans data contains an empty plan name.');
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new TypeError(`Legacy Plan "${name}" must contain an object value.`);
+    }
+    return {
+      ...data,
+      // The localStorage object key is the stable IndexedDB key. put() makes
+      // retries safe even when an older app version left partial records.
+      name,
+      savedAt: data.savedAt || migratedAt,
+    };
+  });
+}
+
+async function migrateLegacyPlans() {
   const raw = localStorage.getItem(LEGACY_LOCALSTORAGE_KEY);
   if (!raw) return;
 
-  try {
-    const legacyPlans = JSON.parse(raw);
-    await Promise.all(
-      Object.entries(legacyPlans).map(([name, data]) => store.save(name, data))
-    );
-  } catch {
-    // JSON corrompido: nada a migrar, segue sem quebrar o app.
-  } finally {
-    localStorage.removeItem(LEGACY_LOCALSTORAGE_KEY);
+  const records = parseLegacyPlans(raw);
+  const db = await getDB();
+  await idbTransaction(db, STORE_NAME, 'readwrite', (stores) => {
+    records.forEach((record) => stores[STORE_NAME].put(record));
+    return records.length;
+  });
+
+  // Remove the only legacy copy strictly after IndexedDB confirms commit.
+  // If parsing or any put fails, the source remains available for the next load.
+  localStorage.removeItem(LEGACY_LOCALSTORAGE_KEY);
+}
+
+async function ensureMigrated() {
+  if (!migrationPromise) {
+    migrationPromise = migrateLegacyPlans().catch((error) => {
+      migrationPromise = null;
+      console.error('[plans migration] Failed; legacy localStorage data was preserved for automatic retry.', error);
+      throw error;
+    });
   }
+  return migrationPromise;
 }
 
 export async function getAllPlans() {
@@ -29,15 +62,6 @@ export async function getAllPlans() {
   return store.getAll();
 }
 
-export async function getPlan(name) {
-  await ensureMigrated();
-  return store.get(name);
-}
-
 export async function savePlan(name, data) {
   return store.save(name, data);
-}
-
-export async function deletePlan(name) {
-  return store.remove(name);
 }

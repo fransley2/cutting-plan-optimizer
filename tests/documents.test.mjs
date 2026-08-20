@@ -24,11 +24,11 @@ const samplePackage = Object.freeze({
   stockItems: Object.freeze([
     Object.freeze({
       po: 'PO-1',
-      item: '10',
+      poItem: '10',
       traceability: 'TR-1',
-      description: 'Pipe 6in',
+      materialDescription: 'Pipe 6in',
       materialGrade: 'S355',
-      heatNumber: 'H-1',
+      heatNo: 'H-1',
       qty: 2,
       lengthMm: 6000,
       drawing: 'DWG-1',
@@ -46,7 +46,7 @@ const samplePackage = Object.freeze({
       stockLength: 6000,
       remaining: 500,
       pieces: Object.freeze([
-        Object.freeze({ drawingRef: 'DWG-1', mark: 'M1', pos: 'P1', cutLength: 1000, material: 'S355' }),
+        Object.freeze({ drawingRef: 'DWG-1', mark: 'M1', pos: 'P1', cutLength: 1000, material: 'S355', hasSobremetal: true, sobremetalMm: 500 }),
         Object.freeze({ drawing: 'DWG-2', mark: 'M2', position: 'P2', length: 2000, material: 'S355' }),
       ]),
     }),
@@ -55,11 +55,11 @@ const samplePackage = Object.freeze({
     Object.freeze({
       traceability: 'TR-1-OC-001',
       parentTrace: 'TR-1',
-      description: 'Pipe offcut',
+      materialDescription: 'Pipe offcut',
       materialGrade: 'S355',
-      heatNumber: 'H-1',
+      heatNo: 'H-1',
       po: 'PO-1',
-      item: '10',
+      poItem: '10',
       lengthMm: 500,
       qty: 1,
     }),
@@ -88,15 +88,17 @@ function clone(value) {
   assert.equal(row.po, 'PO-1');
   assert.equal(row.poItem, '10');
   assert.equal(row.traceability, 'TR-1');
-  assert.equal(row.description, 'Pipe 6in');
+  assert.equal(row.materialDescription, 'Pipe 6in');
   assert.equal(row.materialGrade, 'S355');
-  assert.equal(row.heat, 'H-1');
+  assert.equal(row.heatNo, 'H-1');
 }
 
 {
   const doc = buildCuttingSheetDocument(clone(samplePackage), options);
   assert.equal(doc.rows.length, 2);
   assert.equal(doc.rows[0].mark, 'M1');
+  assert.equal(doc.rows[0].sobremetalMm, 500);
+  assert.ok(doc.columns.some((column) => column.key === 'sobremetalMm'));
   assert.equal(doc.rows[1].pos, 'P2');
 }
 
@@ -104,9 +106,9 @@ function clone(value) {
   const doc = buildCuttingSheetDocument(clone(samplePackage), options);
   assert.equal(doc.summary.totalBars, 1);
   assert.equal(doc.summary.totalPieces, 2);
-  assert.equal(doc.summary.totalNestedLength, 3000);
+  assert.equal(doc.summary.totalNestedLength, 3500);
   assert.equal(doc.summary.totalSpareOffcut, 500);
-  assert.equal(doc.summary.utilizationPercent, 50);
+  assert.equal(doc.summary.utilizationPercent, 3500 / 6000 * 100);
 }
 
 {
@@ -114,7 +116,7 @@ function clone(value) {
   pkg.nestedBars[0].remaining = '';
   pkg.nestedBars[0].offcut = '';
   const doc = buildCuttingSheetDocument(pkg, options);
-  assert.equal(doc.rows[0].spareOffcut, 3000);
+  assert.equal(doc.rows[0].spareOffcut, 2500);
 }
 
 {

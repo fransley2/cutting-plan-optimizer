@@ -1,4 +1,5 @@
 import { openModal, closeModal } from './modal.js';
+import { projectTraceabilityCode } from '../core/materialTraceability.js';
 
 const STATUS_OPTIONS = ['ACTIVE', 'HOLD', 'INACTIVE'];
 const STATUS_LABELS = Object.freeze({
@@ -88,10 +89,23 @@ function collectFormData(form) {
 function buildProjectForm(project = {}) {
   const form = document.createElement('form');
   form.className = 'project-manager-form-grid';
+  const suggestedMaterialCode = project.traceabilityCode || projectTraceabilityCode(project) || project.shortCode;
+  const nameField = createField('Nome *', 'name', projectName(project)); const codeField = createField('Codigo', 'code', project.code); const shortCodeField = createField('Sigla operacional', 'shortCode', project.shortCode); const materialCodeField = createField('Sigla de materiais *', 'traceabilityCode', suggestedMaterialCode);
+  const materialCodeInput = materialCodeField.querySelector('input'); materialCodeInput.required = true; materialCodeInput.maxLength = 4; materialCodeInput.pattern = '[A-Za-z0-9]{1,4}'; materialCodeInput.title = 'Use de 1 a 4 letras ou números, por exemplo G, LU, B5 ou RA.';
+  let useSuggestedMaterialCode = !text(project.traceabilityCode).trim();
+  function updateMaterialCodeSuggestion() {
+    if (!useSuggestedMaterialCode) return;
+    const values = { name: nameField.querySelector('input').value, code: codeField.querySelector('input').value, shortCode: shortCodeField.querySelector('input').value };
+    materialCodeInput.value = projectTraceabilityCode(values) || text(values.shortCode).trim().toUpperCase();
+  }
+  [nameField, codeField, shortCodeField].forEach((field) => field.querySelector('input').addEventListener('input', updateMaterialCodeSuggestion));
+  materialCodeInput.addEventListener('input', () => { useSuggestedMaterialCode = !materialCodeInput.value.trim(); });
   form.append(
-    createField('Nome *', 'name', projectName(project)),
+    nameField,
     createField('Cliente', 'client', project.client),
-    createField('Codigo', 'code', project.code),
+    codeField,
+    shortCodeField,
+    materialCodeField,
     createSelectField('Status', 'status', project.status || 'ACTIVE', STATUS_OPTIONS),
     createField('Descricao', 'description', project.description, 'textarea'),
   );
@@ -137,8 +151,14 @@ function renderProjectCard(project) {
   const header = document.createElement('div');
   header.className = 'project-manager-card-header';
   const title = document.createElement('div');
+  const projectTitle = document.createElement('div');
+  projectTitle.className = 'project-manager-title';
+  if (text(project.shortCode).trim()) {
+    projectTitle.append(createText('span', 'project-short-code', project.shortCode));
+  }
+  projectTitle.append(createText('h2', null, name || 'Projeto sem nome'));
   title.append(
-    createText('h2', null, name || 'Projeto sem nome'),
+    projectTitle,
     createText('p', 'text-muted', project.client || 'Cliente nao informado'),
   );
   if (selectedInManager || inUse) {
@@ -159,6 +179,8 @@ function renderProjectCard(project) {
   meta.className = 'project-manager-meta';
   meta.append(
     createText('span', null, `Codigo: ${project.code || '-'}`),
+    createText('span', null, `Sigla: ${project.shortCode || '-'}`),
+    createText('span', 'project-material-code', `Materiais: ${project.traceabilityCode || projectTraceabilityCode(project) || '-'}`),
     createText('span', null, `Equipamentos: ${linkedEquipment.length}`),
   );
 
@@ -227,6 +249,7 @@ function openProjectEditor(project = null) {
         onClick: async () => {
           try {
             const payload = collectFormData(form);
+            if (!form.reportValidity()) return;
             if (!text(payload.name).trim()) {
               showToast('Nome do projeto e obrigatorio.', 'error');
               return;
@@ -265,7 +288,7 @@ async function openDeleteDialog() {
     return;
   }
 
-  const linkedEquipment = await state.dependencies.listEquipments?.({ projectId: state.selectedName }) || [];
+  const linkedEquipment = await state.dependencies.listEquipments?.({ projectId: project.id }) || [];
   const body = document.createElement('div');
   body.appendChild(createText('p', null, `Excluir o projeto "${state.selectedName}"?`));
   if (linkedEquipment.length > 0) {
@@ -309,7 +332,7 @@ export async function refreshProjectManagerPage() {
   const projects = await listProjects();
   const linkedEntries = await Promise.all((Array.isArray(projects) ? projects : []).map(async (project) => {
     const name = projectName(project);
-    const equipments = listEquipments ? await listEquipments({ projectId: name }) : [];
+    const equipments = listEquipments ? await listEquipments({ projectId: project.id }) : [];
     return [name, Array.isArray(equipments) ? equipments : []];
   }));
 

@@ -1,8 +1,12 @@
 import { safeToFixed } from '../core/utils.js';
+import { pieceNominalLengthMm, pieceSobremetalMm } from '../core/cuttingSheetPlanning.js';
 import {
   buildPieceColorMap,
   getColorForPiece,
 } from '../core/pieceColors.js';
+import { normalizeReportHeader } from '../data/appSettings.js';
+import { cuttingSheetBarPoItem } from '../core/cuttingSheetPresentation.js';
+import { operationalWorkpackValue } from '../core/workpackRelations.js';
 
 const DEFAULT_REPORT_OPTIONS = Object.freeze({
   labels: Object.freeze({
@@ -14,13 +18,6 @@ const DEFAULT_REPORT_OPTIONS = Object.freeze({
   labelFontSizePt: 9,
   useColors: true,
   includeSignatures: false,
-});
-
-const DEFAULT_REPORT_HEADER = Object.freeze({
-  companyName: 'Saipem do Brasil',
-  subtitle: '',
-  documentTitle: 'Cutting Plan Report',
-  logoUrl: 'https://i.ibb.co/wZZQrZW0/Saipem-logo-300px.png',
 });
 
 function escapeHtml(value) {
@@ -93,7 +90,7 @@ function getProjectData(reportData) {
     project: reportData.project || projectData.project || '',
     client: reportData.client || projectData.client || '',
     equipment: reportData.equipment || projectData.equipment || '',
-    workpack: reportData.workpack || projectData.workpack || '',
+    workpack: operationalWorkpackValue(reportData.workpack || projectData.workpack),
     materialCoupon: reportData.materialCoupon
       || reportData.coupon
       || projectData.materialCoupon
@@ -174,24 +171,22 @@ function getAlgorithmName(solution, reportData) {
 }
 
 function getReportHeader(reportData, project) {
+  const header = normalizeReportHeader(reportData.reportHeader || reportData.settings?.reportHeader || {});
   return {
-    ...DEFAULT_REPORT_HEADER,
-    ...(reportData.reportHeader || reportData.settings?.reportHeader || {}),
+    ...header,
     companyName: reportData.companyName
       || reportData.profile?.company
       || reportData.reportHeader?.companyName
       || reportData.settings?.reportHeader?.companyName
-      || DEFAULT_REPORT_HEADER.companyName,
+      || header.companyName,
     subtitle: reportData.reportHeader?.subtitle
       || reportData.settings?.reportHeader?.subtitle
       || project.project
       || 'Cutting Plan Optimizer',
-    documentTitle: reportData.reportHeader?.documentTitle
-      || reportData.settings?.reportHeader?.documentTitle
-      || DEFAULT_REPORT_HEADER.documentTitle,
+    documentTitles: header.documentTitles,
     logoUrl: reportData.reportHeader?.logoUrl
       || reportData.settings?.reportHeader?.logoUrl
-      || DEFAULT_REPORT_HEADER.logoUrl,
+      || header.logoUrl,
   };
 }
 
@@ -224,7 +219,7 @@ function renderHeader(project, reportData, solution) {
       </div>
 
       <div class="doc-title">
-        <h2>${escapeHtml(reportHeader.documentTitle)}</h2>
+        <h2>${escapeHtml(reportHeader.documentTitles.cuttingPlan)}</h2>
         <p class="date">${escapeHtml(formatDate(project.reportDate))}</p>
       </div>
     </div>
@@ -268,9 +263,10 @@ function buildPieceLabelHtml(piece, index, options) {
   if (options.labels.pos && piece?.pos) mainLabels.push(piece.pos);
 
   const mainText = mainLabels.join(' / ');
-  const length = getPieceLength(piece);
+  const nominal = pieceNominalLengthMm(piece);
+  const sobremetal = pieceSobremetalMm(piece);
   const lengthHtml = options.labels.length
-    ? `<span class="piece-length">(${escapeHtml(formatMmValue(length))})</span>`
+    ? `<span class="piece-length">(${escapeHtml(formatMmValue(nominal))}${sobremetal ? ` + ${escapeHtml(formatMmValue(sobremetal))} SM` : ''})</span>`
     : '';
   const mainHtml = mainText
     ? `<span class="piece-mark">${escapeHtml(mainText)}</span>`
@@ -344,10 +340,10 @@ function renderCutSheet(bar, index, solution, reportData, colorMap, options) {
   const utilization = getUtilization(bar);
   const offcut = Math.max(0, numberValue(bar?.remaining ?? bar?.offcut ?? bar?.offcutLength));
   const material = bar?.materialGrade || bar?.material || 'N/A';
-  const heat = bar?.heatNumber || bar?.heat || 'N/A';
+  const heat = bar?.heatNo || 'N/A';
   const traceability = bar?.traceability || bar?.trace || 'N/A';
   const po = bar?.po || 'N/A';
-  const item = bar?.item || 'N/A';
+  const item = cuttingSheetBarPoItem(bar) || 'N/A';
   const subtitle = bar?.description || bar?.stockDescription || bar?.profile || bar?.type || 'Stock material';
 
   return `
@@ -1016,10 +1012,23 @@ function buildReportHtml(reportData) {
     ${options.includeSignatures ? renderSignatures() : ''}
   </div>
   <script>
-    window.addEventListener('load', () => {
+    const waitForImage = (image) => {
+      if (image.complete) return typeof image.decode === 'function' ? image.decode().catch(() => {}) : Promise.resolve();
+      return new Promise((resolve) => {
+        image.addEventListener('load', resolve, { once: true });
+        image.addEventListener('error', resolve, { once: true });
+      });
+    };
+    const printWhenReady = async () => {
+      try { if (document.fonts?.ready) await document.fonts.ready; } catch (error) { console.warn('Visual report could not wait for fonts.', error); }
+      await Promise.all([...document.images].map(waitForImage));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
       window.focus();
-      setTimeout(() => window.print(), 200);
-    });
+      window.print();
+    };
+    if (document.readyState === 'complete') printWhenReady();
+    else window.addEventListener('load', printWhenReady, { once: true });
   </script>
 </body>
 </html>`;

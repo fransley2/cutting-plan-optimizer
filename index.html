@@ -8,8 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;600;700&family=Inter:wght@400;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./src/styles/app.css">
+<link rel="stylesheet" href="./src/styles/users.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div id="toast-container"></div>
@@ -25,94 +28,61 @@
     </div>
 
     <nav class="sidebar-nav" aria-label="Navegacao principal">
-      <div class="nav-group">
-        <p class="nav-group-title">Principal</p>
-        <button class="nav-link active" type="button" data-phase="home" data-section-title="Pagina Inicial">
-          <span class="material-symbols-outlined">home</span>
-          Pagina Inicial
-        </button>
-        <button class="nav-link" type="button" data-phase="planner" data-section-title="Cut Sheets">
-          <span class="material-symbols-outlined">content_cut</span>
-          Cut Sheets
-        </button>
-        <button class="nav-link" type="button" data-phase="results" data-section-title="Nesting Results">
-          <span class="material-symbols-outlined">analytics</span>
-          Nesting Results
+      <div class="nav-group nav-group-dashboard">
+        <button class="nav-link active" type="button" data-phase="home" data-section-title="Dashboard">
+          <span class="material-symbols-outlined">space_dashboard</span>
+          Dashboard
         </button>
       </div>
 
       <div class="nav-group">
-        <p class="nav-group-title">Navegar por</p>
-        <button class="nav-link" type="button" data-phase="stock" data-section-title="Estoque">
-          <span class="material-symbols-outlined">inventory_2</span>
-          Estoque
-        </button>
-        <button class="nav-link" type="button" data-phase="inventory" data-section-title="Inventario">
-          <span class="material-symbols-outlined">warehouse</span>
-          Inventario
-        </button>
-        <button class="nav-link" type="button" data-phase="mto" data-section-title="MTO">
-          <span class="material-symbols-outlined">assignment</span>
-          MTO
-        </button>
-        <button class="nav-link" type="button" data-phase="cutting-packages" data-section-title="Cutting Packages">
-          <span class="material-symbols-outlined">inventory_2</span>
-          Cutting Packages
-        </button>
-        <button class="nav-link" type="button" data-phase="documents" data-section-title="Documentos">
-          <span class="material-symbols-outlined">description</span>
-          Documentos
-        </button>
-        <button class="nav-link" type="button" data-phase="offcuts" data-section-title="Retalhos">
-          <span class="material-symbols-outlined">content_cut</span>
-          Retalhos
-        </button>
-        <button class="nav-link" type="button" data-phase="audit" data-section-title="Auditoria">
-          <span class="material-symbols-outlined">fact_check</span>
-          Auditoria
-        </button>
+        <p class="nav-group-title">Engineering</p>
+        <button class="nav-link" type="button" data-phase="equipments" data-section-title="Equipment"><span class="material-symbols-outlined">precision_manufacturing</span>Equipment</button>
+        <button class="nav-link" type="button" data-phase="drawings" data-section-title="Drawings"><span class="material-symbols-outlined">architecture</span>Drawings</button>
+        <button class="nav-link" type="button" data-phase="mto" data-section-title="MTO"><span class="material-symbols-outlined">assignment</span>MTO</button>
       </div>
 
       <div class="nav-group">
-        <p class="nav-group-title">Master Data</p>
-        <button class="nav-link" type="button" data-phase="projects" data-section-title="Gerenciador de Projetos">
-          <span class="material-symbols-outlined">folder</span>
-          Projetos
-        </button>
-        <button class="nav-link" type="button" data-phase="equipments" data-section-title="Equipamentos">
-          <span class="material-symbols-outlined">precision_manufacturing</span>
-          Equipamentos
-        </button>
-        <button class="nav-link" type="button" data-phase="drawings" data-section-title="Drawings">
-          <span class="material-symbols-outlined">architecture</span>
-          Drawings
-        </button>
-        <button class="nav-link" type="button" data-phase="workpacks" data-section-title="Workpacks">
-          <span class="material-symbols-outlined">workspaces</span>
-          Workpacks
-        </button>
-        <button class="nav-link nav-link-disabled" type="button" data-action="disabled">
-          <span class="material-symbols-outlined">dashboard</span>
-          <span>Dashboard</span>
-          <span class="nav-badge">Em breve</span>
-        </button>
-        <button class="nav-link nav-link-disabled" type="button" data-action="disabled">
-          <span class="material-symbols-outlined">assessment</span>
-          <span>Relatorios</span>
-          <span class="nav-badge">Em breve</span>
-        </button>
+        <p class="nav-group-title">Procurement</p>
+        <button class="nav-link" type="button" data-phase="procurement" data-section-title="Procurement"><span class="material-symbols-outlined">shopping_cart</span>PO &amp; Receiving</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">Inventory</p>
+        <button class="nav-link" type="button" data-phase="inventory" data-section-title="Inventory"><span class="material-symbols-outlined">warehouse</span>Stock &amp; Reservations</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">Fabrication</p>
+        <button class="nav-link" type="button" data-phase="workpacks" data-section-title="Workpacks"><span class="material-symbols-outlined">workspaces</span>Workpacks</button>
+        <button class="nav-link" type="button" data-phase="material-coupons" data-section-title="Material Coupons"><span class="material-symbols-outlined">confirmation_number</span>Material Coupons</button>
+        <button class="nav-link" type="button" data-phase="cut-sheets" data-section-title="Cutting Sheets"><span class="material-symbols-outlined">content_cut</span>Cutting Sheets</button>
+        <button class="nav-link" type="button" data-phase="return-material" data-section-title="Return Material Vouchers"><span class="material-symbols-outlined">assignment_return</span>RMV</button>
+      </div>
+
+      <div class="nav-group">
+        <p class="nav-group-title">Genealogy</p>
+        <button class="nav-link" type="button" data-phase="genealogy" data-section-title="Traceability Search"><span class="material-symbols-outlined">account_tree</span>Traceability Search</button>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-link" type="button" data-phase="reports" data-section-title="Reports"><span class="material-symbols-outlined">assessment</span>Reports</button>
       </div>
     </nav>
 
     <div class="sidebar-footer">
-      <button class="sidebar-footer-link" type="button" id="settings-btn">
-        <span class="material-symbols-outlined">settings</span>
-        Configurações
-      </button>
-      <button class="sidebar-footer-link" type="button">
-        <span class="material-symbols-outlined">archive</span>
-        Arquivo
-      </button>
+      <details class="sidebar-admin">
+        <summary><span class="material-symbols-outlined">admin_panel_settings</span>Admin</summary>
+        <div class="sidebar-admin-links">
+          <button class="nav-link" type="button" data-phase="projects" data-section-title="Projects"><span class="material-symbols-outlined">folder</span>Projects</button>
+          <button class="nav-link" type="button" data-phase="documents" data-section-title="Document Register"><span class="material-symbols-outlined">description</span>Document Register</button>
+          <button class="nav-link" type="button" data-phase="audit" data-section-title="Audit"><span class="material-symbols-outlined">fact_check</span>Audit</button>
+          <button class="nav-link" type="button" data-phase="data-quality" data-section-title="Data Quality"><span class="material-symbols-outlined">rule</span>Data Quality</button>
+          <button class="sidebar-footer-link" type="button" id="users-btn"><span class="material-symbols-outlined">group</span>Users</button>
+          <button class="sidebar-footer-link" type="button" id="settings-btn"><span class="material-symbols-outlined">settings</span>Settings</button>
+          <button class="sidebar-footer-link" type="button"><span class="material-symbols-outlined">archive</span>Archive</button>
+        </div>
+      </details>
     </div>
   </aside>
 
@@ -124,7 +94,7 @@
         </button>
         <span class="material-symbols-outlined topbar-apps">apps</span>
         <span class="topbar-product">Fabrication Portal</span>
-        <span class="topbar-section" id="active-section-title">Pagina Inicial</span>
+      <span class="topbar-section" id="active-section-title">Dashboard</span>
       </div>
 
       <div class="topbar-right">
@@ -132,13 +102,24 @@
           <span class="material-symbols-outlined">search</span>
           <input type="search" placeholder="Buscar planos e materiais..." aria-label="Buscar">
         </label>
+        <label class="topbar-language" title="Idioma">
+          <span class="material-symbols-outlined" aria-hidden="true">language</span>
+          <span class="sr-only">Idioma</span>
+          <select data-language-selector aria-label="Idioma">
+            <option value="pt-BR">Português (Brasil)</option>
+            <option value="en">English</option>
+          </select>
+        </label>
         <button class="topbar-project-selector" type="button" id="active-project-selector" aria-label="Selecionar projeto ativo">
           <span class="material-symbols-outlined">business_center</span>
           <span data-active-project-label>Nenhum projeto selecionado</span>
         </button>
-        <button class="topbar-user profile-button" type="button" id="profile-btn" aria-label="Abrir gerenciador de perfil">
+        <button class="topbar-user profile-button" type="button" id="profile-btn" aria-label="Opções do usuário ativo" aria-haspopup="menu" aria-expanded="false">
           <span class="user-avatar">?</span>
-          <span data-profile-label>Configurar perfil</span>
+          <span class="active-user-identity">
+            <strong data-active-user-name>—</strong>
+            <small data-active-user-role>—</small>
+          </span>
         </button>
       </div>
     </header>
@@ -179,51 +160,65 @@
           <div>
             <p class="eyebrow">Master Data</p>
             <h1>Equipamentos</h1>
-            <p class="text-muted">Cadastre e gerencie equipamentos vinculados aos projetos.</p>
+            <p class="text-muted">Organize famílias, configurações e TAGs físicas dos equipamentos do projeto.</p>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header">
-            <h2>Equipamentos</h2>
-            <div class="gap-2">
-              <button class="btn btn-primary" id="btn-equipment-new" type="button">Novo</button>
-              <button class="btn btn-secondary" id="btn-equipment-edit" type="button">Editar</button>
-              <button class="btn btn-secondary" id="btn-equipment-delete" type="button">Excluir</button>
-              <button class="btn btn-secondary" id="btn-equipment-refresh" type="button">Atualizar</button>
+        <div class="equipment-portfolio-kpis" id="equipment-portfolio-summary" aria-live="polite"></div>
+
+        <div class="card equipment-register-card">
+            <div class="card-header">
+              <h2>Equipamentos</h2>
+              <div class="gap-2">
+                <button class="btn btn-primary" id="btn-equipment-new" type="button">Novo</button>
+                <button class="btn btn-secondary" id="btn-equipment-edit" type="button" disabled>Editar</button>
+                <button class="btn btn-secondary" id="btn-equipment-duplicate" type="button" disabled>Duplicar</button>
+                <button class="btn btn-secondary" id="btn-equipment-delete" type="button" disabled>Excluir</button>
+                <button class="btn btn-secondary" id="btn-equipment-refresh" type="button">Atualizar</button>
+              </div>
             </div>
-          </div>
 
-          <div class="filter-row">
-            <select class="input" id="equipment-project-filter">
-              <option value="">Todos os projetos</option>
-            </select>
+            <div class="filter-row">
+              <select class="input" id="equipment-project-filter">
+                <option value="">Todos os projetos</option>
+              </select>
 
-            <select class="input" id="equipment-status-filter">
-              <option value="">Todos os status</option>
-              <option value="ACTIVE">ACTIVE</option>
-              <option value="HOLD">HOLD</option>
-              <option value="INACTIVE">INACTIVE</option>
-            </select>
+              <select class="input" id="equipment-status-filter">
+                <option value="">Todos os status</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="HOLD">HOLD</option>
+                <option value="INACTIVE">INACTIVE</option>
+              </select>
 
-            <input class="input" id="equipment-search" type="search" placeholder="Buscar por codigo, nome, client tag ou disciplina...">
-          </div>
+              <select class="input" id="equipment-location-filter">
+                <option value="">Todas as áreas</option>
+              </select>
 
-          <div class="table-wrap">
-            <table class="data-table equipments-table" id="equipments-table">
-              <thead>
-                <tr>
-                  <th>Projeto</th>
-                  <th>Codigo</th>
-                  <th>Nome</th>
-                  <th>Client Tag</th>
-                  <th>Disciplina</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="equipments-table-body"></tbody>
-            </table>
-          </div>
+              <select class="input" id="equipment-type-filter">
+                <option value="">Todos os tipos</option>
+              </select>
+
+              <input class="input" id="equipment-search" type="search" placeholder="Buscar por TAG, tipo, serviço, desenho ou nome...">
+            </div>
+
+            <div class="table-wrap">
+              <table class="data-table equipments-table" id="equipments-table">
+                <thead>
+                  <tr>
+                    <th>Grupo de equipamento</th>
+                    <th>Local / Serviço</th>
+                    <th>Configuração</th>
+                    <th>Quantidade</th>
+                    <th>TAGs</th>
+                    <th>Design Drawing</th>
+                    <th>Shop Drawings</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="equipments-table-body"></tbody>
+              </table>
+            </div>
         </div>
       </section>
 
@@ -232,9 +227,11 @@
           <div>
             <p class="eyebrow">Master Data</p>
             <h1>Workpacks</h1>
-            <p class="text-muted">Cadastre e gerencie Workpacks vinculados a Projetos, Equipamentos e Drawings.</p>
+            <p class="text-muted">Plan and manage fabrication work packages linked to projects, equipment, drawings and execution activities.</p>
           </div>
         </div>
+
+        <div class="kpi-grid" id="workpack-kpis"></div>
 
         <div class="card">
           <div class="card-header">
@@ -242,6 +239,7 @@
             <div class="gap-2">
               <button class="btn btn-primary" id="btn-workpack-new" type="button">Novo</button>
               <button class="btn btn-secondary" id="btn-workpack-edit" type="button">Editar</button>
+              <button class="btn btn-secondary" id="btn-workpack-duplicate" type="button">Duplicar</button>
               <button class="btn btn-secondary" id="btn-workpack-delete" type="button">Excluir</button>
               <button class="btn btn-secondary" id="btn-workpack-refresh" type="button">Atualizar</button>
             </div>
@@ -267,6 +265,8 @@
               <option value="ON_HOLD">ON_HOLD</option>
               <option value="CLOSED">CLOSED</option>
             </select>
+            <select class="input" id="workpack-type-filter"><option value="">Todos os tipos</option></select>
+            <select class="input" id="workpack-priority-filter"><option value="">Todas as prioridades</option></select>
 
             <input class="input" id="workpack-search" type="search" placeholder="Buscar por WP No, titulo, drawing, disciplina, projeto ou equipamento...">
           </div>
@@ -279,9 +279,10 @@
                   <th>Titulo</th>
                   <th>Projeto</th>
                   <th>Equipamento</th>
-                  <th>Drawing</th>
-                  <th>Disciplina</th>
+                  <th>Tipo</th>
+                  <th>Prioridade</th>
                   <th>Status</th>
+                  <th>Progresso</th>
                 </tr>
               </thead>
               <tbody id="workpacks-table-body"></tbody>
@@ -295,13 +296,13 @@
           <div>
             <p class="eyebrow">Master Data</p>
             <h1>Drawings</h1>
-            <p class="text-muted">Cadastre e gerencie desenhos vinculados a Projetos e Equipamentos.</p>
+            <p class="text-muted">Cadastre os Shop Drawings do Technical Office; a referência do Design Drawing vem do Equipment.</p>
           </div>
         </div>
 
         <div class="kpi-grid" id="drawing-kpis">
           <div class="kpi-card">
-            <div class="kpi-label">Total Drawings</div>
+            <div class="kpi-label">Total Shop Drawings</div>
             <div class="kpi-value" id="drawing-kpi-total">0</div>
           </div>
           <div class="kpi-card">
@@ -316,10 +317,9 @@
 
         <div class="card">
           <div class="card-header">
-            <h2>Drawings</h2>
+            <h2>Shop Drawings</h2>
             <div class="gap-2">
               <button class="btn btn-primary" id="btn-drawing-new" type="button">Novo</button>
-              <button class="btn btn-secondary" id="btn-drawing-edit" type="button">Editar</button>
               <button class="btn btn-secondary" id="btn-drawing-delete" type="button">Excluir</button>
               <button class="btn btn-secondary" id="btn-drawing-refresh" type="button">Atualizar</button>
             </div>
@@ -344,20 +344,18 @@
               <option value="CANCELLED">CANCELLED</option>
             </select>
 
-            <input class="input" id="drawing-search" type="search" placeholder="Buscar por drawing, revisao, titulo, disciplina, projeto ou equipamento...">
+            <input class="input" id="drawing-search" type="search" placeholder="Buscar por Shop Drawing, Design Drawing, link, revisão, título, projeto ou equipamento...">
           </div>
 
           <div class="table-wrap">
             <table class="data-table drawings-table" id="drawings-table">
               <thead>
                 <tr>
-                  <th>Drawing No</th>
-                  <th>Template</th>
+                  <th>Shop Drawing No</th>
                   <th>Revision</th>
-                  <th>Title</th>
-                  <th>Projeto</th>
+                  <th>Design Drawing</th>
                   <th>Equipamento</th>
-                  <th>Disciplina</th>
+                  <th>Link</th>
                   <th>Status</th>
                   <th>Ações</th>
                 </tr>
@@ -369,199 +367,138 @@
       </section>
 
       <section class="page-section hidden app-shell" id="section-material-coupons" data-phase="material-coupons">
-        <div class="section-header page-header">
+        <div class="section-header page-header mc-module-header">
           <div>
             <p class="eyebrow">Material Management</p>
-            <h1>Material Coupon</h1>
-            <p class="text-muted">Crie, emita, acompanhe e exporte Material Coupons.</p>
+            <h1>Material Coupon Management</h1>
+            <p class="text-muted">Rastreabilidade, emissão, controle de saldo e reserva física de materiais offshore.</p>
           </div>
-
-          <div class="section-actions page-actions">
-            <button class="btn btn-secondary" id="btn-mc-back">Back</button>
-            <button class="btn btn-secondary" id="btn-mc-refresh">Refresh</button>
-            <button class="btn btn-primary" id="btn-mc-new">New Coupon</button>
-            <button class="btn btn-secondary" id="btn-configure-material-coupon-template" type="button">Configurar Template</button>
-            <button class="btn btn-secondary" id="btn-mc-export-extract">Export Extract</button>
-            <button class="btn btn-secondary" id="btn-mc-export-excel">Export Excel</button>
-            <button class="btn btn-primary" id="btn-mc-print">Print / Save PDF</button>
+          <div class="mc-view-switcher" role="group" aria-label="Material Coupon view">
+            <button class="mc-view-option active" id="btn-mc-close-control" type="button" aria-pressed="true">
+              <span class="material-symbols-outlined" aria-hidden="true">edit_document</span>
+              Gerenciador e Editor
+            </button>
+            <button class="mc-view-option" id="btn-mc-open-control" type="button" aria-pressed="false">
+              <span class="material-symbols-outlined" aria-hidden="true">database</span>
+              Control Database (Emitidos)
+            </button>
           </div>
         </div>
 
         <div class="kpi-grid" id="material-coupon-kpis"></div>
 
-        <div class="mc-manager-layout">
-          <aside class="card mc-list-card">
-            <div class="card-header">
-              <h2>Coupons</h2>
-            </div>
-
-            <div class="filter-row">
-              <input id="mc-search" class="input" type="search" placeholder="Search by MC, project, destination, status...">
-              <select id="mc-status-filter" class="input">
-                <option value="">All Status</option>
-                <option value="DRAFT">Draft</option>
-                <option value="ISSUED">Issued</option>
-                <option value="DISPATCHED">Dispatched</option>
-                <option value="RECEIVED">Received</option>
-                <option value="CLOSED">Closed</option>
-                <option value="CANCELLED">Cancelled</option>
-              </select>
-            </div>
-
-            <div id="material-coupon-list" class="mc-list"></div>
-          </aside>
-
-          <main class="card mc-workspace-card">
-            <div class="card-header">
-              <div>
-                <h2 id="mc-workspace-title">No coupon selected</h2>
-                <p class="text-muted" id="mc-workspace-subtitle">Create or select a Material Coupon.</p>
-              </div>
-
-              <div class="gap-2">
-                <button class="btn btn-secondary" id="btn-mc-duplicate">Duplicate</button>
-                <button class="btn btn-secondary" id="btn-mc-save">Save Draft</button>
-                <button class="btn btn-primary" id="btn-mc-issue">Issue Coupon</button>
+        <div class="mc-manager-layout" id="mc-manager-layout">
+          <section class="card mc-list-view" id="mc-list-view" aria-labelledby="mc-list-title">
+            <div class="mc-list-toolbar">
+              <div><p class="eyebrow">Document Register</p><h2 id="mc-list-title">Material Coupons</h2></div>
+              <div class="mc-list-toolbar-actions">
+                <button class="btn btn-secondary" id="btn-mc-list-export" type="button"><span class="material-symbols-outlined" aria-hidden="true">download</span>Export</button>
+                <button class="btn btn-primary" id="btn-mc-new" type="button"><span class="material-symbols-outlined" aria-hidden="true">add</span>New Coupon</button>
               </div>
             </div>
+            <div class="mc-list-filters" aria-label="Coupon filters">
+              <label><span>Project</span><select id="mc-project-filter" class="input"><option value="">All projects</option></select></label>
+              <label><span>Destination</span><select id="mc-destination-filter" class="input"><option value="">All destinations</option></select></label>
+              <label><span>Status</span><select id="mc-status-filter" class="input"><option value="">All statuses</option></select></label>
+              <label><span>Material Name</span><select id="mc-material-filter" class="input"><option value="">All materials</option></select></label>
+              <label><span>Material Type</span><select id="mc-type-filter" class="input"><option value="">All types</option></select></label>
+              <label><span>Updated from</span><input id="mc-date-filter" class="input" type="date"></label>
+              <label class="mc-search-box"><span>Search</span><span class="mc-search-control"><span class="material-symbols-outlined" aria-hidden="true">search</span><input id="mc-search" class="input" type="search" placeholder="Code, project, destination..." aria-label="Search Material Coupons"></span></label>
+            </div>
+            <div id="material-coupon-list" class="mc-list-table-host"></div>
+          </section>
 
-            <div class="tabs mc-tabs" role="tablist">
-              <button class="tab active" type="button" data-mc-tab="header">Header</button>
-              <button class="tab" type="button" data-mc-tab="materials">Materials</button>
-              <button class="tab" type="button" data-mc-tab="signatures">Signatures</button>
-              <button class="tab" type="button" data-mc-tab="notes">Notes</button>
-              <button class="tab" type="button" data-mc-tab="preview">Preview</button>
-              <button class="tab" type="button" data-mc-tab="history">History</button>
+          <main class="card mc-workspace-card hidden" id="mc-main-workspace">
+            <div class="card-header mc-workspace-header-sticky">
+              <div class="mc-workspace-title-block">
+                <button class="mc-back-link" id="btn-mc-back" type="button">
+                  <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+                  Back
+                </button>
+                <span class="mc-title-divider" aria-hidden="true"></span>
+                <div><h2 id="mc-workspace-title">No coupon selected</h2><p class="text-muted" id="mc-workspace-subtitle">Create or select a Material Coupon.</p></div>
+                <span id="mc-editor-status" class="mc-status-badge mc-status-draft">DRAFT</span>
+              </div>
+
+              <div class="mc-command-bar">
+                <button class="btn btn-secondary" id="btn-mc-save" type="button"><span class="material-symbols-outlined" aria-hidden="true">save</span>Save Draft</button>
+                <button class="btn btn-primary mc-issue-button" id="btn-mc-issue" type="button"><span class="material-symbols-outlined" aria-hidden="true">output</span>Emitir</button>
+                <button class="btn btn-secondary" id="btn-mc-print" type="button"><span class="material-symbols-outlined" aria-hidden="true">print</span>Print / Save PDF</button>
+                <div class="mc-overflow">
+                  <button class="btn btn-secondary mc-overflow-trigger" id="btn-mc-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="mc-more-actions" aria-label="More actions" title="More actions">
+                    <span class="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+                  </button>
+                  <div class="mc-overflow-menu hidden" id="mc-more-actions" role="menu" aria-label="More actions">
+                    <button id="btn-mc-duplicate" type="button" role="menuitem"><span class="material-symbols-outlined">content_copy</span>Duplicate</button>
+                    <button id="btn-mc-refresh" type="button" role="menuitem"><span class="material-symbols-outlined">refresh</span>Refresh Local</button>
+                    <button id="btn-mc-link-workpack" type="button" role="menuitem"><span class="material-symbols-outlined">workspaces</span>Link Workpack</button>
+                    <div class="mc-overflow-divider" role="separator"></div>
+                    <button id="btn-mc-submit" type="button" role="menuitem"><span class="material-symbols-outlined">send</span>Submit</button>
+                    <button id="btn-mc-approve" type="button" role="menuitem"><span class="material-symbols-outlined">check_circle</span>Approve</button>
+                    <button id="btn-mc-reject" type="button" role="menuitem"><span class="material-symbols-outlined">cancel</span>Reject</button>
+                    <button id="btn-mc-dispatch" type="button" role="menuitem"><span class="material-symbols-outlined">local_shipping</span>Dispatch</button>
+                    <button id="btn-mc-receive" type="button" role="menuitem"><span class="material-symbols-outlined">inventory</span>Receive</button>
+                    <button id="btn-mc-close" type="button" role="menuitem"><span class="material-symbols-outlined">task_alt</span>Close</button>
+                    <button id="btn-mc-reopen" type="button" role="menuitem"><span class="material-symbols-outlined">restart_alt</span>Reopen</button>
+                    <button id="btn-mc-release" type="button" role="menuitem"><span class="material-symbols-outlined">undo</span>Release Reservations</button>
+                    <button id="btn-mc-cancel" class="mc-menu-danger" type="button" role="menuitem"><span class="material-symbols-outlined">block</span>Cancel Coupon</button>
+                    <button id="btn-mc-new-revision" type="button" role="menuitem"><span class="material-symbols-outlined">difference</span>New Revision</button>
+                    <div class="mc-overflow-divider" role="separator"></div>
+                    <button id="btn-mc-export-extract" type="button" role="menuitem"><span class="material-symbols-outlined">csv</span>Export Extract</button>
+                    <button id="btn-mc-export-excel" type="button" role="menuitem"><span class="material-symbols-outlined">table_view</span>Export Excel</button>
+                    <button id="btn-configure-material-coupon-template" type="button" role="menuitem"><span class="material-symbols-outlined">settings_applications</span>Configure Template</button>
+                    <button id="btn-mc-delete" class="mc-menu-danger" type="button" role="menuitem"><span class="material-symbols-outlined">delete</span>Delete Coupon</button>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div id="mc-tab-header" class="mc-tab-panel active"></div>
-            <div id="mc-tab-materials" class="mc-tab-panel hidden"></div>
-            <div id="mc-tab-signatures" class="mc-tab-panel hidden"></div>
-            <div id="mc-tab-notes" class="mc-tab-panel hidden"></div>
-            <div id="mc-tab-preview" class="mc-tab-panel hidden"></div>
-            <div id="mc-tab-history" class="mc-tab-panel hidden"></div>
+            <div class="mc-editor-sections">
+              <details class="card planner-collapsible-card mc-editor-section" open><summary class="planner-collapsible-summary"><span class="material-symbols-outlined planner-collapsible-icon">expand_more</span><span class="planner-collapsible-title">Coupon and Project Data</span></summary><div class="planner-collapsible-body"><div id="mc-tab-header" class="mc-tab-panel active"></div></div></details>
+              <details class="card planner-collapsible-card mc-editor-section" open><summary class="planner-collapsible-summary"><span class="material-symbols-outlined planner-collapsible-icon">expand_more</span><span class="planner-collapsible-title">Materials (<span id="mc-materials-tab-count">0</span>)</span></summary><div class="planner-collapsible-body"><div id="mc-tab-materials" class="mc-tab-panel active"></div></div></details>
+              <details class="card planner-collapsible-card mc-editor-section"><summary class="planner-collapsible-summary"><span class="material-symbols-outlined planner-collapsible-icon">expand_more</span><span class="planner-collapsible-title">Signatures</span></summary><div class="planner-collapsible-body"><div id="mc-tab-signatures" class="mc-tab-panel active"></div></div></details>
+              <details class="card planner-collapsible-card mc-editor-section"><summary class="planner-collapsible-summary"><span class="material-symbols-outlined planner-collapsible-icon">expand_more</span><span class="planner-collapsible-title">Reference and Notes</span></summary><div class="planner-collapsible-body"><div id="mc-tab-notes" class="mc-tab-panel active"></div></div></details>
+              <details class="card planner-collapsible-card mc-editor-section"><summary class="planner-collapsible-summary"><span class="material-symbols-outlined planner-collapsible-icon">expand_more</span><span class="planner-collapsible-title">Document Preview</span></summary><div class="planner-collapsible-body"><div id="mc-tab-preview" class="mc-tab-panel active"></div></div></details>
+              <details class="card planner-collapsible-card mc-editor-section"><summary class="planner-collapsible-summary"><span class="material-symbols-outlined planner-collapsible-icon">expand_more</span><span class="planner-collapsible-title">Audit History</span></summary><div class="planner-collapsible-body"><div id="mc-tab-history" class="mc-tab-panel active"></div></div></details>
+            </div>
           </main>
         </div>
-      </section>
 
-      <section id="section-cutting-packages" class="app-shell hidden page-section" data-phase="cutting-packages">
-        <div class="section-header page-header">
-          <div>
-            <h1>Cutting Packages</h1>
-            <p class="text-muted">Crie pacotes de corte a partir da MTO validada e dos materiais selecionados do estoque.</p>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h2>Pacotes de Corte</h2>
-            <div class="gap-2">
-              <button class="btn btn-primary" id="btn-create-cutting-package">
-                <span class="material-symbols-outlined">inventory_2</span>
-                Criar Pacote
-              </button>
-              <button class="btn btn-secondary" id="btn-refresh-cutting-packages">
-                <span class="material-symbols-outlined">refresh</span>
-                Atualizar
-              </button>
-              <button class="btn btn-secondary" id="btn-validate-cutting-package">
-                <span class="material-symbols-outlined">rule</span>
-                Validar
-              </button>
-              <button class="btn btn-secondary" id="btn-release-cutting-package">
-                <span class="material-symbols-outlined">verified</span>
-                Liberar
-              </button>
-              <button class="btn btn-secondary" id="btn-send-package-to-nesting">
-                <span class="material-symbols-outlined">content_cut</span>
-                Enviar para Nesting
-              </button>
+        <section id="mc-control-database-page" class="card mc-control-database-page hidden" aria-labelledby="mc-control-database-title">
+          <div class="mc-control-page-header">
+            <div>
+              <h2 id="mc-control-database-title">Control Database — Materiais Emitidos</h2>
+              <p class="text-muted">Linhas dos Material Coupons emitidos, enriquecidas pelos RMVs vinculados ao material de origem.</p>
             </div>
           </div>
+          <div class="kpi-grid" id="mc-control-kpis"></div>
+          <div class="card mc-control-database-card" id="mc-control-database-content"></div>
+        </section>
+      </section>
 
-          <div class="kpi-grid" id="cutting-packages-kpis"></div>
-          <div id="cutting-packages-list"></div>
-          <div class="cutting-package-workspace">
-            <div id="cutting-package-validation-panel"></div>
-            <div id="cutting-package-detail"></div>
-          </div>
-          <div class="placeholder-panel hidden">
-            <strong>Nenhum pacote criado.</strong>
-            <p>Esta área será usada para listar pacotes, materiais reservados, status e vínculo com Cut Sheets.</p>
+      <section id="return-material-phase" class="app-shell hidden page-section" data-phase="return-material">
+        <div class="section-header page-header">
+          <div>
+            <p class="eyebrow">Material Management</p>
+            <h1>Return Material</h1>
+            <p class="text-muted">Gerencie retalhos, disposição de materiais e Return Material Vouchers em um único fluxo.</p>
           </div>
         </div>
+        <div id="return-material-workspace"></div>
       </section>
 
       <section id="documents-phase" class="app-shell hidden page-section" data-phase="documents">
         <div class="section-header page-header">
           <div>
             <h1>Documentos</h1>
-            <p class="text-muted">Gere estruturas de Material Coupon, Cutting Sheet e Return Material Voucher.</p>
+            <p class="text-muted">Consulte tipos de documentos e os registros já existentes no sistema.</p>
           </div>
         </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h2>Emissão de Documentos</h2>
-            <div class="gap-2">
-              <button class="btn btn-primary" id="btn-open-material-coupon-manager">
-                <span class="material-symbols-outlined">receipt_long</span>
-                Material Coupon Manager
-              </button>
-              <button class="btn btn-primary" id="btn-generate-material-coupon">
-                <span class="material-symbols-outlined">receipt_long</span>
-                Material Coupon
-              </button>
-              <button class="btn btn-secondary" id="btn-generate-cutting-sheet">
-                <span class="material-symbols-outlined">description</span>
-                Cutting Sheet
-              </button>
-              <button class="btn btn-secondary" id="btn-generate-rmv">
-                <span class="material-symbols-outlined">assignment_return</span>
-                RMV
-              </button>
-            </div>
-          </div>
-
-          <div class="placeholder-panel">
-            <strong>Nenhum documento emitido.</strong>
-            <p>Esta área será usada para pré-visualização tabular e futura exportação Excel/PDF.</p>
-          </div>
-        </div>
+        <div id="documents-hub" class="documents-hub-host"></div>
       </section>
 
-      <section id="offcuts-phase" class="app-shell hidden page-section" data-phase="offcuts">
-        <div class="section-header page-header">
-          <div>
-            <h1>Retalhos</h1>
-            <p class="text-muted">Controle retalhos gerados pelo nesting, retorno operacional ao estoque, scrap e pendência fiscal/RMV.</p>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
-            <h2>Retorno de Retalhos</h2>
-            <div class="gap-2">
-              <button class="btn btn-primary" id="btn-return-offcuts-to-stock">
-                <span class="material-symbols-outlined">keyboard_return</span>
-                Retornar ao Estoque
-              </button>
-              <button class="btn btn-secondary" id="btn-mark-offcuts-scrap">
-                <span class="material-symbols-outlined">delete</span>
-                Marcar Scrap
-              </button>
-              <button class="btn btn-secondary" id="btn-create-offcut-rmv">
-                <span class="material-symbols-outlined">assignment_return</span>
-                Gerar RMV
-              </button>
-            </div>
-          </div>
-
-          <div class="placeholder-panel">
-            <strong>Nenhum retalho processado.</strong>
-            <p>Esta área será usada para listar retalhos, parent trace, novo traceability, status e vínculo com RMV.</p>
-          </div>
-        </div>
+      <section id="procurement-phase" class="app-shell hidden page-section" data-phase="procurement">
+        <div id="procurement-workspace"></div>
       </section>
 
       <section id="audit-phase" class="app-shell hidden page-section" data-phase="audit">
@@ -576,42 +513,179 @@
           <div class="card-header">
             <h2>Histórico Local</h2>
             <div class="gap-2">
-              <button class="btn btn-secondary" id="btn-refresh-audit-log">
+              <button class="btn btn-secondary" id="btn-refresh-audit-log" type="button">
                 <span class="material-symbols-outlined">refresh</span>
                 Atualizar
               </button>
-              <button class="btn btn-secondary" id="btn-export-audit-log">
+              <button class="btn btn-secondary" id="btn-export-audit-log" type="button">
                 <span class="material-symbols-outlined">download</span>
                 Exportar Auditoria
               </button>
             </div>
           </div>
 
-          <div class="placeholder-panel">
-            <strong>Nenhum evento carregado.</strong>
-            <p>Esta área será usada para filtros por entidade, ação, data, usuário e origem.</p>
+          <div id="audit-workspace"></div>
+        </div>
+      </section>
+
+      <section id="data-quality-phase" class="app-shell hidden page-section" data-phase="data-quality">
+        <div class="section-header page-header">
+          <div>
+            <p class="eyebrow">Governance</p>
+            <h1>Data Quality</h1>
+            <p class="text-muted">Revise IDs, vínculos e snapshots inconsistentes antes que afetem documentos, materiais ou rastreabilidade.</p>
           </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" id="btn-refresh-data-quality" type="button"><span class="material-symbols-outlined">refresh</span>Atualizar</button>
+            <button class="btn btn-secondary" id="btn-export-data-quality" type="button"><span class="material-symbols-outlined">download</span>Exportar CSV</button>
+            <button class="btn btn-primary" id="btn-fix-project-aliases" type="button"><span class="material-symbols-outlined">auto_fix_high</span>Corrigir aliases</button>
+          </div>
+        </div>
+        <div id="data-quality-workspace"></div>
+      </section>
+
+      <section id="reports-phase" class="app-shell hidden page-section" data-phase="reports">
+        <div id="reports-workspace"></div>
+      </section>
+
+      <section id="genealogy-phase" class="app-shell hidden page-section" data-phase="genealogy">
+        <div id="genealogy-workspace"></div>
+      </section>
+
+      <section id="cut-sheets-phase" class="hidden page-section" data-phase="cut-sheets">
+        <div class="app-shell">
+        <div id="cut-sheets-workspace"></div>
+
+        <div id="cut-sheets-results-page" class="hidden">
+          <div id="section-results"></div>
+          <div class="results-page-header">
+            <div class="results-page-title">
+              <p class="eyebrow">Cutting Sheet Results</p>
+              <h1>Resultado da Otimizacao</h1>
+              <p class="text-muted" id="results-subtitle">Revise o aproveitamento, cortes e sobras antes de exportar.</p>
+            </div>
+            <div class="results-command-bar">
+              <button class="btn btn-ghost results-back-action" id="back-to-edit-btn" type="button"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>Voltar para editar</button>
+              <button class="btn btn-secondary" id="save-results-plan-btn" type="button"><span class="material-symbols-outlined" aria-hidden="true">save</span>Salvar</button>
+              <button class="btn btn-secondary" id="new-results-plan-btn" type="button"><span class="material-symbols-outlined" aria-hidden="true">add</span>Novo Cutting Sheet</button>
+              <button class="btn btn-primary" id="issue-results-cutting-sheet-btn" type="button"><span class="material-symbols-outlined" aria-hidden="true">content_cut</span>Emitir Cutting Sheet</button>
+              <button class="btn btn-secondary" id="print-results-cutting-sheet-btn" type="button"><span class="material-symbols-outlined" aria-hidden="true">print</span>Imprimir / PDF</button>
+              <button class="btn btn-secondary" id="generate-results-rmv-btn" type="button"><span class="material-symbols-outlined" aria-hidden="true">assignment_return</span>Gerar RMV</button>
+              <div class="results-overflow">
+                <button class="btn btn-secondary results-overflow-trigger" id="btn-results-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="results-more-actions" aria-label="Mais ações" title="Mais ações"><span class="material-symbols-outlined" aria-hidden="true">more_horiz</span></button>
+                <div class="results-overflow-menu hidden" id="results-more-actions" role="menu" aria-label="Mais ações do resultado">
+                  <button id="generate-results-material-coupon-btn" type="button" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">confirmation_number</span><span>Gerar Material Coupon</span></button>
+                  <button id="link-results-workpack-btn" type="button" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">workspaces</span><span>Vincular ao Workpack</span></button>
+                  <div class="results-overflow-divider" role="separator"></div>
+                  <button id="open-export-modal" type="button" role="menuitem"><span class="material-symbols-outlined" aria-hidden="true">download</span><span>Exportar resultados</span></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <section class="results-actions results-view-only" aria-label="Configurações de visualização do resultado">
+            <div class="results-action-section results-view-actions">
+              <div class="results-action-copy">
+                <strong>Ajustes antes da impressão</strong>
+                <span>Escolha o que será legível dentro de cada corte e o consumo de tinta do relatório.</span>
+              </div>
+              <div class="report-options-group" aria-label="Opcoes do relatorio">
+                <fieldset class="report-option-cluster">
+                  <legend>Dados na barra</legend>
+                  <div class="label-toggle-group" aria-label="Informações exibidas dentro das peças">
+                    <button type="button" id="toggle-label-sequence" data-label-option="sequence" class="active" aria-pressed="true" title="Ordem de execução do corte">Ordem</button>
+                    <button type="button" id="toggle-label-mark" data-label-option="mark" class="active" aria-pressed="true" title="Marca da peça">Marca</button>
+                    <button type="button" id="toggle-label-pos" data-label-option="pos" class="active" aria-pressed="true" title="Posição da peça">POS</button>
+                    <button type="button" id="toggle-label-length" data-label-option="length" class="active" aria-pressed="true" title="Comprimento nominal e sobremetal">Medida</button>
+                  </div>
+                </fieldset>
+                <fieldset class="report-option-cluster">
+                  <legend>Impressão</legend>
+                  <div class="report-print-mode-group" role="group" aria-label="Esquema de cores do relatório">
+                    <button type="button" data-report-color-mode="color" aria-pressed="false">Cor</button>
+                    <button type="button" data-report-color-mode="grayscale" aria-pressed="false">Cinza</button>
+                    <button type="button" data-report-color-mode="ink" class="active" aria-pressed="true">Econômico P&amp;B</button>
+                  </div>
+                </fieldset>
+                <fieldset class="report-option-cluster report-font-cluster">
+                  <legend>Tamanho do texto</legend>
+                  <label class="report-font-control" for="label-font-size-slider">
+                    <input id="label-font-size-slider" type="range" min="7" max="12" step="1" value="9" aria-label="Tamanho do texto dentro das peças">
+                    <output id="label-font-size-value" for="label-font-size-slider">9pt</output>
+                  </label>
+                </fieldset>
+                <label class="report-signature-control"><input type="checkbox" id="include-signatures"> Assinaturas</label>
+              </div>
+            </div>
+          </section>
+
+          <section id="results-container" class="results-workspace">
+            <section class="results-summary-panel">
+              <div class="results-section-heading">
+                <div>
+                  <p class="eyebrow">Resumo executivo</p>
+                  <h2>Indicadores do plano</h2>
+                </div>
+                <span class="material-symbols-outlined" aria-hidden="true">analytics</span>
+              </div>
+              <div id="results-summary"></div>
+            </section>
+            <div id="results-visual" class="results-visual"></div>
+          </section>
+        </div>
         </div>
       </section>
 
       <section id="planner-phase" class="app-shell hidden">
-        <div class="page-header">
-          <div>
-            <p class="eyebrow">Cut Sheets</p>
-            <h1>Plano de Corte</h1>
-            <p class="text-muted">Prepare estoque, pecas e parametros antes de otimizar o nesting.</p>
+        <section class="card planner-workspace-header-card">
+          <div class="card-header planner-workspace-header-sticky">
+            <div class="planner-workspace-title-block">
+              <button class="planner-back-link" id="btn-planner-back" type="button">
+                <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+                Cut Sheets
+              </button>
+              <span class="planner-title-divider" aria-hidden="true"></span>
+              <div class="planner-workspace-heading">
+                <h1 id="planner-workspace-title">Novo Cutting Sheet</h1>
+                <p class="text-muted" id="planner-workspace-subtitle">RASCUNHO · informe os dados e materiais do Cutting Sheet</p>
+              </div>
+              <span class="planner-status-badge planner-status-draft" id="planner-editor-status">RASCUNHO</span>
+            </div>
+
+            <div class="planner-command-bar">
+              <button class="btn btn-secondary" id="save-plan-btn" type="button">
+                <span class="material-symbols-outlined" aria-hidden="true">save</span>
+                Salvar rascunho
+              </button>
+              <button class="btn btn-primary" id="planner-optimize-btn" type="button">
+                <span class="material-symbols-outlined" aria-hidden="true">precision_manufacturing</span>
+                Otimizar
+              </button>
+              <div class="planner-overflow">
+                <button class="btn btn-secondary planner-overflow-trigger" id="btn-planner-more" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="planner-more-actions" aria-label="Mais ações" title="Mais ações">
+                  <span class="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+                </button>
+                <div class="planner-overflow-menu hidden" id="planner-more-actions" role="menu" aria-label="Mais ações do Cutting Sheet">
+                  <button id="btn-planner-save-as" type="button" role="menuitem"><span class="material-symbols-outlined">drive_file_rename_outline</span>Salvar como novo</button>
+                  <button id="load-plan-btn" type="button" role="menuitem"><span class="material-symbols-outlined">folder_open</span>Carregar Cutting Sheet</button>
+                  <button id="btn-planner-open-results" type="button" role="menuitem" disabled><span class="material-symbols-outlined">analytics</span>Abrir resultados</button>
+                  <div class="planner-overflow-divider" role="separator"></div>
+                  <button id="btn-planner-new" type="button" role="menuitem"><span class="material-symbols-outlined">note_add</span>Novo Cutting Sheet</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="page-actions">
-            <button class="btn btn-secondary" id="save-plan-btn">
-              <span class="material-symbols-outlined">save</span>
-              Salvar Plano
-            </button>
-            <button class="btn btn-ghost" id="load-plan-btn">
-              <span class="material-symbols-outlined">folder_open</span>
-              Carregar Plano
-            </button>
+
+          <div class="planner-identity-panel">
+            <div class="planner-field-group-heading"><span class="material-symbols-outlined" aria-hidden="true">badge</span><h2>Identificação do Cutting Sheet</h2></div>
+            <div class="planner-identity-grid">
+              <label class="planner-identity-field planner-plan-name-field"><span>Número do Cutting Sheet</span><input id="planner-plan-name" type="text" placeholder="Ex.: B58_FAB_CS-001" autocomplete="off"></label>
+              <label class="planner-identity-field"><span>Projeto</span><input id="planner-plan-project" class="planner-automatic-input" type="text" readonly value="—"></label>
+              <label class="planner-identity-field"><span>Workpack</span><input id="planner-plan-workpack" class="planner-automatic-input" type="text" readonly value="—"></label>
+              <label class="planner-identity-field"><span>Último salvamento</span><input id="planner-plan-saved-at" class="planner-automatic-input" type="text" readonly value="Ainda não salvo"></label>
+            </div>
           </div>
-        </div>
+        </section>
 
         <details class="card planner-collapsible-card" id="section-project" open>
           <summary class="planner-collapsible-summary">
@@ -638,7 +712,14 @@
                 </select>
                 <span class="text-muted" id="planner-equipment-legacy"></span>
               </div>
-              <div class="field"><label for="workpack-name">Workpack</label><input id="workpack-name" type="text"></div>
+              <div class="field planner-workpack-field">
+                <label for="planner-workpack-select">Workpack</label>
+                <select id="planner-workpack-select"><option value="">Selecione um Workpack</option></select>
+                <div class="planner-workpack-legacy hidden" id="planner-workpack-legacy-container">
+                  <span class="text-muted" id="planner-workpack-legacy" aria-live="polite"></span>
+                  <input id="workpack-name" type="text" readonly aria-label="Texto legado do Workpack">
+                </div>
+              </div>
             </div>
           </div>
         </details>
@@ -660,21 +741,26 @@
                   <option value="smallest-bars">Menores Barras Primeiro</option>
                 </select>
               </div>
-              <div class="field">
-                <label><input type="checkbox" id="enable-trim"> Habilitar Aparo</label>
+              <div class="field planner-checkbox-field">
+                <label class="planner-checkbox-label"><input type="checkbox" id="enable-trim"> Habilitar Aparo</label>
               </div>
-              <div id="trim-inputs" class="hidden gap-2">
+              <div id="trim-inputs" class="hidden planner-trim-fields">
                 <div class="field"><label for="left-trim">Aparo Esq. (mm)</label><input id="left-trim" type="number" value="0"></div>
                 <div class="field"><label for="right-trim">Aparo Dir. (mm)</label><input id="right-trim" type="number" value="0"></div>
               </div>
               <div class="field"><label for="report-date">Data</label><input id="report-date" type="date"></div>
+              <div class="field"><label for="planner-material-coupon">Material Coupon</label><input id="planner-material-coupon" type="text" list="planner-material-coupon-options" placeholder="Selecione ou informe o número"><datalist id="planner-material-coupon-options"></datalist></div>
             </div>
           </div>
         </details>
 
         <section class="card" id="section-stock">
           <div class="card-header">
-            <h2>Estoque Disponivel</h2>
+            <div>
+              <p class="eyebrow">Etapa 1</p>
+              <h2>Estoque Disponível</h2>
+              <p class="text-muted planner-section-description">Barras e retalhos disponíveis para compor o plano.</p>
+            </div>
             <div class="gap-2">
               <button class="btn btn-secondary" id="upload-stock-btn">
                 <span class="material-symbols-outlined">upload_file</span>
@@ -684,14 +770,19 @@
                 <span class="material-symbols-outlined">warehouse</span>
                 Inventario IndexedDB
               </button>
+              <button class="btn btn-secondary" id="import-coupon-materials-btn" disabled>
+                <span class="material-symbols-outlined">inventory_2</span>
+                Importar Materiais do Coupon
+              </button>
               <input type="file" id="stock-file-input" class="hidden" accept=".xlsx,.csv">
-              <button class="btn btn-primary btn-icon" id="add-stock" aria-label="Adicionar estoque">
+              <button class="btn btn-primary" id="add-stock" aria-label="Adicionar barra de estoque">
                 <span class="material-symbols-outlined">add</span>
+                Adicionar barra
               </button>
             </div>
           </div>
           <div class="table-wrap">
-            <table class="data-table">
+            <table class="data-table planner-data-table">
               <thead><tr>
                 <th>PO</th><th>Item</th><th>Qty</th><th>Comp. (mm)</th><th>Material</th><th>Heat</th><th>Descricao</th><th>Rastreabilidade</th><th>Acoes</th>
               </tr></thead>
@@ -702,7 +793,11 @@
 
         <section class="card" id="section-parts">
           <div class="card-header">
-            <h2>Pecas Requeridas</h2>
+            <div>
+              <p class="eyebrow">Etapa 2</p>
+              <h2>Peças requeridas</h2>
+              <p class="text-muted planner-section-description">Peças de corte que serão alocadas nas barras selecionadas.</p>
+            </div>
             <div class="gap-2">
               <button class="btn btn-secondary" id="import-mto-btn">
                 <span class="material-symbols-outlined">upload_file</span>
@@ -713,13 +808,14 @@
                 Importar Excel
               </button>
               <input type="file" id="parts-file-input" class="hidden" accept=".xlsx,.csv">
-              <button class="btn btn-primary btn-icon" id="add-part" aria-label="Adicionar peca">
+              <button class="btn btn-primary" id="add-part" aria-label="Adicionar peça">
                 <span class="material-symbols-outlined">add</span>
+                Adicionar peça
               </button>
             </div>
           </div>
           <div class="table-wrap">
-            <table class="data-table">
+            <table class="data-table planner-data-table">
               <thead><tr>
                 <th>DWG</th><th>Mark</th><th>POS</th><th>Qty</th><th>Comp. Corte (mm)</th><th>Material</th><th>Prioridade</th><th>Acoes</th>
               </tr></thead>
@@ -736,42 +832,6 @@
         </div>
       </section>
 
-      <section id="results-phase" class="hidden app-shell">
-        <div id="section-results"></div>
-        <div class="results-page-header">
-          <div>
-            <p class="eyebrow">Nesting Results</p>
-            <h1>Resultado da Otimizacao</h1>
-            <p class="text-muted" id="results-subtitle">Revise o aproveitamento, cortes e sobras antes de exportar.</p>
-          </div>
-
-          <div class="results-actions">
-            <button class="btn btn-ghost" id="back-to-edit-btn">Voltar para editar</button>
-            <button class="btn btn-secondary" id="generate-results-material-coupon-btn">Generate Material Coupon</button>
-            <div class="report-options-group" aria-label="Opcoes do relatorio">
-              <div class="label-toggle-group" aria-label="Labels das pecas">
-                <button type="button" id="toggle-label-sequence" data-label-option="sequence" aria-pressed="false" title="Numero sequencial">#</button>
-                <button type="button" id="toggle-label-mark" data-label-option="mark" class="active" aria-pressed="true" title="Mark">M</button>
-                <button type="button" id="toggle-label-pos" data-label-option="pos" class="active" aria-pressed="true" title="POS">P</button>
-                <button type="button" id="toggle-label-length" data-label-option="length" class="active" aria-pressed="true" title="Comprimento">L</button>
-              </div>
-              <label class="report-font-control" for="label-font-size-slider">
-                <span>Fonte</span>
-                <input id="label-font-size-slider" type="range" min="6" max="16" value="9">
-                <span id="label-font-size-value">9pt</span>
-              </label>
-              <button class="btn btn-secondary" type="button" id="toggle-colors-btn">Colors</button>
-              <label class="report-signature-control"><input type="checkbox" id="include-signatures"> Signatures</label>
-            </div>
-            <button class="btn btn-primary" id="open-export-modal">Exportar Resultados</button>
-          </div>
-        </div>
-
-        <section id="results-container" class="card">
-          <div id="results-summary"></div>
-          <div id="results-visual" class="results-visual"></div>
-        </section>
-      </section>
     </main>
   </div>
 </div>
@@ -805,6 +865,12 @@
       <span class="material-symbols-outlined export-card-icon">content_cut</span>
       <span class="export-card-title">Ficha de Corte PDF</span>
       <span class="export-card-desc">Ficha detalhada por barra para oficina.</span>
+    </button>
+
+    <button class="export-card" id="btn-export-piece-labels">
+      <span class="material-symbols-outlined export-card-icon">label</span>
+      <span class="export-card-title">Etiquetas das Peças</span>
+      <span class="export-card-desc">Templates Pimaco A4 e Carta com identificação e rastreabilidade.</span>
     </button>
 
     <button class="export-card" id="btn-export-excel">

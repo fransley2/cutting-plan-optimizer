@@ -83,17 +83,17 @@ const {
   deleteDrawing,
   getDrawing,
   listDrawings,
+  getDrawingByDrawingNo,
 } = await import('../src/data/drawings.js');
+const {
+  ensureDrawingsForMtoItems,
+  linkDrawingsForMtoItemsToEquipment,
+} = await import('../src/data/mtoDrawings.js');
 
 await assertRejectsRequired(
   createDrawing,
   { equipmentId: 'EQ-1', drawingNo: 'DWG-001' },
   'projectId is required to create a drawing.',
-);
-await assertRejectsRequired(
-  createDrawing,
-  { projectId: 'PROJECT-1', drawingNo: 'DWG-001' },
-  'equipmentId is required to create a drawing.',
 );
 await assertRejectsRequired(
   createDrawing,
@@ -106,10 +106,17 @@ const input = {
   equipmentId: 'EQ-1',
   drawingNo: '263216-SGU-IF-ST-DM-011',
   templateDrawingNo: 'ROV-GRAB-BAR-STD-001',
+  engineeringCode: 'C.CNS.2488',
   revision: 'A',
   title: 'Pipe rack general arrangement',
   discipline: 'STRUCTURAL',
   clientReference: 'CLIENT-REF-1',
+  fileUrl: 'https://sharepoint.example.com/drawings/263216-SGU-IF-ST-DM-011.pdf',
+  fileDataUrl: 'data:application/pdf;base64,JVBERi0xLjQ=',
+  fileName: '263216-SGU-IF-ST-DM-011.pdf',
+  fileType: 'application/pdf',
+  fileSize: 2048,
+  notes: 'Shop drawing for fabrication.',
 };
 const before = JSON.stringify(input);
 const created = await createDrawing(input);
@@ -122,6 +129,13 @@ assert.equal(created.equipmentId, 'EQ-1');
 assert.equal(created.workpackId, '');
 assert.equal(created.drawingNo, '263216-SGU-IF-ST-DM-011');
 assert.equal(created.templateDrawingNo, 'ROV-GRAB-BAR-STD-001');
+assert.equal(created.engineeringCode, 'C.CNS.2488');
+assert.equal(created.fileUrl, 'https://sharepoint.example.com/drawings/263216-SGU-IF-ST-DM-011.pdf');
+assert.equal(created.fileDataUrl, 'data:application/pdf;base64,JVBERi0xLjQ=');
+assert.equal(created.fileName, '263216-SGU-IF-ST-DM-011.pdf');
+assert.equal(created.fileType, 'application/pdf');
+assert.equal(created.fileSize, 2048);
+assert.equal(created.notes, 'Shop drawing for fabrication.');
 assert.equal(typeof created.createdAt, 'string');
 assert.equal(typeof created.updatedAt, 'string');
 
@@ -132,11 +146,22 @@ const updated = await updateDrawing(created.id, {
   title: 'Pipe rack arrangement updated',
   status: 'IFC',
   templateDrawingNo: 'ROV-GRAB-BAR-STD-002',
+  engineeringCode: 'C.CNS.2490',
 });
 assert.equal(updated.title, 'Pipe rack arrangement updated', 'updateDrawing should update title');
 assert.equal(updated.status, 'IFC', 'updateDrawing should update status');
 assert.equal(updated.templateDrawingNo, 'ROV-GRAB-BAR-STD-002', 'updateDrawing should update templateDrawingNo');
+assert.equal(updated.engineeringCode, 'C.CNS.2490', 'updateDrawing should update engineeringCode');
+assert.equal(updated.fileUrl, created.fileUrl, 'updateDrawing should preserve fileUrl when it is not patched');
 assert.equal(updated.createdAt, created.createdAt, 'updateDrawing should preserve createdAt');
+
+const revised = await updateDrawing(updated.id, { revision: 'B', status: 'IFC' });
+assert.notEqual(revised.id, updated.id, 'a new drawing revision must create a new immutable record');
+assert.equal(revised.documentId, updated.documentId);
+assert.equal(revised.supersedesRevisionId, updated.id);
+assert.equal(revised.isCurrentRevision, true);
+assert.equal((await getDrawing(updated.id)).status, 'SUPERSEDED');
+assert.equal((await getDrawing(updated.id)).isCurrentRevision, false);
 
 await assert.rejects(
   () => updateDrawing(created.id, { drawingNo: '' }),
@@ -154,8 +179,8 @@ await createDrawing({
 });
 
 const projectOne = await listDrawings({ projectId: 'PROJECT-1' });
-assert.equal(projectOne.length, 1, 'listDrawings should filter by projectId');
-assert.equal(projectOne[0].id, created.id);
+assert.equal(projectOne.length, 2, 'listDrawings should preserve superseded drawing revisions');
+assert.equal((await listDrawings({ projectId: 'PROJECT-1', isCurrentRevision: true }))[0].id, revised.id);
 
 const equipmentTwo = await listDrawings({ equipmentId: 'EQ-2' });
 assert.equal(equipmentTwo.length, 1, 'listDrawings should filter by equipmentId');
@@ -163,7 +188,7 @@ assert.equal(equipmentTwo[0].drawingNo, '263216-SGU-IF-ST-DM-012');
 
 const ifc = await listDrawings({ status: 'IFC' });
 assert.equal(ifc.length, 1, 'listDrawings should filter by status');
-assert.equal(ifc[0].id, created.id);
+assert.equal(ifc[0].id, revised.id);
 
 const invalidStatus = await createDrawing({
   projectId: 'PROJECT-3',
@@ -185,6 +210,57 @@ const relationshipResult = await listDrawings({
 });
 assert.equal(relationshipResult.length, 1, 'relationship filters should combine project/equipment');
 assert.equal(relationshipResult[0].id, relationship.id);
+
+const pendingEquipment = await createDrawing({
+  projectId: 'PROJECT-PENDING',
+  equipmentId: '',
+  drawingNo: 'PENDING-DWG-001',
+});
+assert.equal(pendingEquipment.equipmentId, '', 'drawings created from MTO may remain pending equipment resolution');
+
+const sampleMtoItems = [
+  { projectId: 'PROJECT-AUTO', drawing: 'AUTO-DWG-001', equipmentId: 'EQ-AUTO', constructionActivity: 'C.CNS.2488' },
+  { projectId: 'PROJECT-AUTO', drawing: 'AUTO-DWG-001', equipmentId: 'EQ-AUTO', constructionActivity: 'C.CNS.2488' },
+  { projectId: 'PROJECT-AUTO', drawing: 'AUTO-DWG-002', equipmentId: '', constructionActivity: 'C.CNS.2489' },
+];
+const firstAutoCreate = await ensureDrawingsForMtoItems(sampleMtoItems, { projectId: 'PROJECT-AUTO' });
+assert.equal(firstAutoCreate.length, 2, 'a sample MTO import should create one drawing per new Drawing No');
+const secondAutoCreate = await ensureDrawingsForMtoItems(sampleMtoItems, { projectId: 'PROJECT-AUTO' });
+assert.equal(secondAutoCreate.length, 0, 're-importing the same MTO should not duplicate drawings');
+
+const autoDrawings = await listDrawings({ projectId: 'PROJECT-AUTO' });
+const autoOne = autoDrawings.find((drawing) => drawing.drawingNo === 'AUTO-DWG-001');
+const autoTwo = autoDrawings.find((drawing) => drawing.drawingNo === 'AUTO-DWG-002');
+assert.equal(autoOne.equipmentId, 'EQ-AUTO');
+assert.equal(autoOne.engineeringCode, 'C.CNS.2488');
+assert.equal(autoOne.status, 'DRAFT');
+assert.equal(autoTwo.equipmentId, '');
+assert.equal(autoTwo.engineeringCode, 'C.CNS.2489');
+const editedAutoDrawing = await updateDrawing(autoTwo.id, { engineeringCode: 'C.CNS.2500' });
+assert.equal(editedAutoDrawing.engineeringCode, 'C.CNS.2500', 'engineeringCode should be editable on an auto-created drawing');
+
+await createDrawing({ projectId: 'PROJECT-AUTO', drawingNo: 'AUTO-DWG-NOT-SELECTED' });
+const linkedDrawings = await linkDrawingsForMtoItemsToEquipment([
+  { projectId: 'PROJECT-AUTO', drawing: 'AUTO-DWG-001' },
+  { projectId: 'PROJECT-AUTO', drawing: 'AUTO-DWG-002' },
+  { projectId: 'PROJECT-AUTO', drawing: 'AUTO-DWG-003' },
+], 'EQ-BULK', { projectId: 'PROJECT-AUTO' });
+assert.equal(linkedDrawings.length, 3, 'bulk MTO linking should resolve every selected Drawing No');
+assert.ok(linkedDrawings.every((drawing) => drawing.equipmentId === 'EQ-BULK'));
+assert.equal(
+  (await getDrawingByDrawingNo('AUTO-DWG-003', { projectId: 'PROJECT-AUTO' }))?.equipmentId,
+  'EQ-BULK',
+  'a drawing missing at link time should be created already linked to the destination equipment',
+);
+assert.equal(
+  (await getDrawingByDrawingNo('AUTO-DWG-NOT-SELECTED', { projectId: 'PROJECT-AUTO' }))?.equipmentId,
+  '',
+  'drawings outside the selected MTO items must not be changed',
+);
+
+await createDrawing({ projectId: 'PROJECT-SCOPE-A', drawingNo: 'SAME-DWG' });
+await createDrawing({ projectId: 'PROJECT-SCOPE-B', drawingNo: 'SAME-DWG' });
+assert.equal((await getDrawingByDrawingNo('same-dwg', { projectId: 'PROJECT-SCOPE-B' }))?.projectId, 'PROJECT-SCOPE-B');
 
 const legacyLinked = await createDrawing({
   projectId: 'PROJECT-LEGACY',

@@ -8,6 +8,7 @@ let inventoryItems = [];
 let activeModal = null;
 let selectedTraces = new Set();
 let visibleInventoryItems = [];
+let unavailableTraces = new Set();
 
 function text(value) {
   return value == null ? '' : String(value);
@@ -30,15 +31,14 @@ function inventoryMatchesSearch(item, term = '') {
     item.traceability,
     item.category,
     item.po,
-    item.item,
-    item.material,
-    item.desc,
-    item.description,
-    item.length,
-    item.thkMm ?? item.refF,
-    item.diaOdMm ?? item.refG,
+    item.poItem,
+    item.materialGrade,
+    item.materialDescription,
+    item.lengthMm,
+    item.thicknessMm ?? item.refF,
+    item.diaMm ?? item.refG,
     item.widthMm ?? item.refH,
-    item.heat,
+    item.heatNo,
     item.status,
   ].join(' ').toLowerCase();
   return tokens.every((token) => searchable.includes(token));
@@ -52,14 +52,14 @@ function buildRowMarkup(item) {
       <td><input type="checkbox" class="inventory-checkbox" data-trace="${escapeHtml(item.trace)}"></td>
       <td>${escapeHtml(item.trace)}</td>
       <td>${escapeHtml(item.category)}</td>
-      <td>${escapeHtml([item.po, item.item].filter(Boolean).join(' / '))}</td>
-      <td>${escapeHtml(item.material)}</td>
-      <td>${escapeHtml(item.desc || item.description)}</td>
-      <td>${escapeHtml(item.thkMm ?? item.refF)}</td>
-      <td>${escapeHtml(item.diaOdMm ?? item.refG)}</td>
+      <td>${escapeHtml([item.po, item.poItem].filter(Boolean).join(' / '))}</td>
+      <td>${escapeHtml(item.materialGrade)}</td>
+      <td>${escapeHtml(item.materialDescription)}</td>
+      <td>${escapeHtml(item.thicknessMm ?? item.refF)}</td>
+      <td>${escapeHtml(item.diaMm ?? item.refG)}</td>
       <td>${escapeHtml(item.widthMm ?? item.refH)}</td>
-      <td>${escapeHtml(item.length)}</td>
-      <td>${escapeHtml(item.heat)}</td>
+      <td>${escapeHtml(item.lengthMm)}</td>
+      <td>${escapeHtml(item.heatNo)}</td>
       <td><span class="inventory-status ${statusClass}">${escapeHtml(status)}</span></td>
     </tr>`;
 }
@@ -90,10 +90,13 @@ function syncSelectionState() {
   const checkboxes = activeModal?.querySelectorAll('.inventory-checkbox');
   checkboxes?.forEach((checkbox) => {
     checkbox.checked = selectedTraces.has(checkbox.dataset.trace);
+    checkbox.disabled = unavailableTraces.has(String(checkbox.dataset.trace));
+    checkbox.closest('tr')?.classList.toggle('inventory-modal-row-selected', checkbox.checked);
+    checkbox.closest('tr')?.classList.toggle('inventory-modal-row-unavailable', checkbox.disabled);
   });
   const selectAll = activeModal?.querySelector('#select-all-inventory');
   if (selectAll) {
-    const visibleTraces = visibleInventoryItems.map((item) => item.trace).filter(Boolean);
+    const visibleTraces = visibleInventoryItems.map((item) => item.trace).filter((trace) => trace && !unavailableTraces.has(String(trace)));
     const selectedVisibleCount = visibleTraces.filter((trace) => selectedTraces.has(trace)).length;
     selectAll.checked = visibleTraces.length > 0 && selectedVisibleCount === visibleTraces.length;
     selectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleTraces.length;
@@ -117,7 +120,7 @@ async function importInventoryFile(file, fileLabelEl, bodyEl) {
   }
 }
 
-export async function openInventoryModal({ onAddToStock }) {
+export async function openInventoryModal({ onAddToStock, onConfirm, mode = 'planner', selectedIds = [], unavailableIds = [] } = {}) {
   const body = document.createElement('div');
   body.className = 'inventory-modal-body';
   body.innerHTML = `
@@ -141,25 +144,32 @@ export async function openInventoryModal({ onAddToStock }) {
       </table>
     </div>`;
 
+  unavailableTraces = new Set(mode === 'select' ? unavailableIds.map(String) : []);
+  selectedTraces = new Set(mode === 'select' ? selectedIds : []);
   activeModal = body;
   const modal = openModal({
     title: 'Inventario Material (IndexedDB)',
     body,
     wide: true,
+    stacked: mode === 'select',
     buttons: [
       { label: 'Cancelar', variant: 'btn-ghost' },
       {
-        label: 'Adicionar ao Estoque',
+        label: mode === 'select' ? 'Selecionar materiais' : 'Adicionar ao Estoque',
         variant: 'btn-primary',
         closeOnClick: false,
-        onClick: () => {
-          const selectedItems = inventoryItems.filter((item) => selectedTraces.has(item.trace));
+        onClick: async () => {
+          const selectedItems = inventoryItems.filter((item) => selectedTraces.has(item.trace) && !unavailableTraces.has(String(item.trace)));
           if (!selectedItems.length) {
             showToast('Selecione pelo menos um material.', 'error');
             return;
           }
-          selectedItems.forEach((item) => onAddToStock?.(mapInventoryItemToStockRow(item)));
-          showToast(`${selectedItems.length} material(is) adicionado(s) ao estoque.`, 'success');
+          if (mode === 'select') {
+            const confirmed = await onConfirm?.(selectedItems);
+            if (confirmed === false) return;
+          }
+          else selectedItems.forEach((item) => onAddToStock?.(mapInventoryItemToStockRow(item)));
+          showToast(mode === 'select' ? `${selectedItems.length} material(is) selecionado(s).` : `${selectedItems.length} material(is) adicionado(s) ao estoque.`, 'success');
           closeModal();
         },
       },
@@ -192,7 +202,7 @@ export async function openInventoryModal({ onAddToStock }) {
   selectAllCheckbox.addEventListener('change', (event) => {
     const checked = event.target.checked;
     visibleInventoryItems.forEach((item) => {
-      if (!item.trace) return;
+      if (!item.trace || unavailableTraces.has(String(item.trace))) return;
       if (checked) selectedTraces.add(item.trace);
       else selectedTraces.delete(item.trace);
     });
@@ -202,8 +212,20 @@ export async function openInventoryModal({ onAddToStock }) {
   tableBody.addEventListener('change', (event) => {
     if (!event.target.matches('.inventory-checkbox')) return;
     const trace = event.target.dataset.trace;
+    if (unavailableTraces.has(String(trace))) {
+      event.target.checked = false;
+      showToast('Este material já está vinculado a outro Workpack.', 'warning');
+      return;
+    }
     if (event.target.checked) selectedTraces.add(trace);
     else selectedTraces.delete(trace);
     syncSelectionState();
+  });
+  tableBody.addEventListener('click', (event) => {
+    if (event.target.matches('input, button, a, label')) return;
+    const checkbox = event.target.closest('tr')?.querySelector('.inventory-checkbox');
+    if (!checkbox || checkbox.disabled) return;
+    checkbox.checked = !checkbox.checked;
+    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
