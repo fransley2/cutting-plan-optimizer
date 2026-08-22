@@ -86,6 +86,7 @@ const {
   getDrawingByDrawingNo,
 } = await import('../src/data/drawings.js');
 const {
+  ensureAndLinkDrawingsForMtoItems,
   ensureDrawingsForMtoItems,
   linkDrawingsForMtoItemsToEquipment,
 } = await import('../src/data/mtoDrawings.js');
@@ -257,6 +258,17 @@ assert.equal(
   '',
   'drawings outside the selected MTO items must not be changed',
 );
+
+await createDrawing({ projectId: 'PROJECT-TAG-LINK', drawingNo: 'TAG-DWG-EXISTING' });
+await ensureAndLinkDrawingsForMtoItems([
+  { projectId: 'PROJECT-TAG-LINK', drawing: 'TAG-DWG-EXISTING', equipmentId: 'EQ-TAG' },
+  { projectId: 'PROJECT-TAG-LINK', drawing: 'TAG-DWG-NEW', equipmentId: 'EQ-TAG' },
+  { projectId: 'PROJECT-TAG-LINK', drawing: 'TAG-DWG-AMBIGUOUS', equipmentId: 'EQ-A' },
+  { projectId: 'PROJECT-TAG-LINK', drawing: 'TAG-DWG-AMBIGUOUS', equipmentId: 'EQ-B' },
+], { projectId: 'PROJECT-TAG-LINK' });
+assert.equal((await getDrawingByDrawingNo('TAG-DWG-EXISTING', { projectId: 'PROJECT-TAG-LINK' }))?.equipmentId, 'EQ-TAG');
+assert.equal((await getDrawingByDrawingNo('TAG-DWG-NEW', { projectId: 'PROJECT-TAG-LINK' }))?.equipmentId, 'EQ-TAG');
+assert.equal((await getDrawingByDrawingNo('TAG-DWG-AMBIGUOUS', { projectId: 'PROJECT-TAG-LINK' }))?.equipmentId, '');
 
 await createDrawing({ projectId: 'PROJECT-SCOPE-A', drawingNo: 'SAME-DWG' });
 await createDrawing({ projectId: 'PROJECT-SCOPE-B', drawingNo: 'SAME-DWG' });

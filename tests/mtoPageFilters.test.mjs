@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
-import { enrichItemsWithEquipment, equipmentHint, filterMtoItems } from '../src/ui/mtoPage.js';
+import {
+  buildMtoEquipmentGroups,
+  commonResolvedEquipmentId,
+  enrichItemsWithEquipment,
+  equipmentHint,
+  extractMtoDimension,
+  filterMtoItems,
+} from '../src/ui/mtoPage.js';
 
 const items = [
   { id: '1', drawing: 'DWG-001', equipmentId: 'EQ-1', material: 'A', discipline: 'PIPING', status: 'open' },
@@ -52,3 +59,27 @@ assert.equal(
 );
 
 console.log('mto page filter tests passed');
+
+assert.deepEqual(
+  filterMtoItems([{ id: 'TAGGED', tag: '32-WJ-10-3020' }], { ...filters, search: 'wj-10-3020' }).map((item) => item.id),
+  ['TAGGED'],
+  'the general MTO search also indexes TAG',
+);
+
+assert.equal(extractMtoDimension('TUBO D168,3 x 19,1 ASTM'), 'D168,3 x 19,1');
+assert.equal(extractMtoDimension('SEM MEDIDA'), '');
+
+const groupEquipments = [{
+  id: 'EQ-GROUP', name: 'Production Jumper', equipmentType: 'JUMPER', fieldLocation: 'KBD', variant: 'TYPE 1',
+  equipmentTags: ['TAG-01', 'TAG-02'],
+}];
+const enrichedGroups = enrichItemsWithEquipment([
+  { id: 'M-1', tag: 'tag-01' },
+  { id: 'M-2', tag: 'TAG-02' },
+  { id: 'M-3', tag: 'TAG-MISSING' },
+], groupEquipments);
+assert.equal(commonResolvedEquipmentId(enrichedGroups.slice(0, 2), groupEquipments), 'EQ-GROUP');
+assert.equal(commonResolvedEquipmentId(enrichedGroups, groupEquipments), '');
+const equipmentGroups = buildMtoEquipmentGroups(enrichedGroups, groupEquipments);
+assert.equal(equipmentGroups.find((group) => group.key === 'equipment:EQ-GROUP').tagCount, 2);
+assert.equal(equipmentGroups.find((group) => group.key === 'unmatched:TAG-MISSING').unmatchedCount, 1);

@@ -1,4 +1,5 @@
 import { inferPurchaseOrderMaterialFields } from './purchaseOrderImport.js';
+import { extractTechnicalTag } from './technicalTag.js';
 
 function numberValue(value) {
   const parsed = Number(String(value ?? '').replace(',', '.'));
@@ -20,13 +21,6 @@ function descriptionSpecValue(description, labelPattern, defaultUnit = '') {
   return `${match[1]}${unit ? ` ${unit === 'INCHES' || unit === 'INCH' ? 'IN' : unit.toLowerCase()}` : ''}`.trim();
 }
 
-function descriptionTag(description = '') {
-  const source = String(description);
-  return String(source.match(/\b(?:PROD|KBD|SPK)(?:\s*\/\s*(?:PROD|KBD|SPK))*\s*\/\s*TAG\s*:?[ \t]*([^\r\n,;]+)/i)?.[1]
-    || source.match(/\bTAG\s*:?[ \t]*([^\r\n,;]+)/i)?.[1]
-    || '').trim();
-}
-
 function descriptionMrItem(description = '') {
   return String(String(description).match(/\bMR\s*ITEM\s*:?\s*([^\r\n,;]+)/i)?.[1] || '').trim();
 }
@@ -44,7 +38,7 @@ function summaryType(poItem, materialGrade) {
 export function poItemTechnicalPresentation(poItem = {}) {
   const description = String(poItem.description || '');
   const inferred = inferPurchaseOrderMaterialFields(description);
-  const tag = String(poItem.equipmentDestination || descriptionTag(description) || '').trim();
+  const tag = String(poItem.equipmentDestination || extractTechnicalTag(description) || '').trim();
   const mrItem = descriptionMrItem(description);
   const material = String(poItem.materialGrade || inferred.materialGrade || '').trim();
   const odNumber = numberValue(poItem.diameterOdMm) || numberValue(inferred.diameterOdMm);

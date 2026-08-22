@@ -1,5 +1,6 @@
 import { readExcelFile } from './excel.js';
 import { parseLocalizedNumber } from '../core/utils.js';
+import { extractTechnicalTag } from '../core/technicalTag.js';
 
 export const MTO_REQUIRED_FIELDS = Object.freeze([
   'drawing',
@@ -376,7 +377,7 @@ export function normalizeMtoRow(row, options = {}) {
     cutLength,
     requiredLength,
     identCode: text(sourceValue('identCode')),
-    tag: text(sourceValue('tag')),
+    tag: text(sourceValue('tag')) || extractTechnicalTag(description),
     weightKg: numericParsing.weightKg.parsedValue,
     externalSurfaceM2: numericParsing.externalSurfaceM2.parsedValue,
     paintingSurfaceM2: numericParsing.paintingSurfaceM2.parsedValue,

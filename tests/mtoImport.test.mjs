@@ -180,6 +180,23 @@ test('accepts a cut length followed by a unit', () => {
   assert.equal(item.metadata.numericParsing.cutLength.valid, true);
 });
 
+test('extracts TAG from the technical description when no dedicated column is mapped', () => {
+  const item = normalizeMtoRow({
+    ...validBaseRow,
+    Description: 'PROD/SPK/TAG: 32-WJ-10-3020\nTUBO D168,3 x 19,1',
+  });
+  assert.equal(item.tag, '32-WJ-10-3020');
+});
+
+test('keeps an explicit TAG column authoritative over the description', () => {
+  const item = normalizeMtoRow({
+    ...validBaseRow,
+    Tag: '32-WJ-10-9999',
+    Description: 'TAG: 32-WJ-10-3020',
+  });
+  assert.equal(item.tag, '32-WJ-10-9999');
+});
+
 test('distinguishes invalid, missing, zero, and negative quantity values', () => {
   const cases = [
     ['abc', null, 'Invalid quantity format'],

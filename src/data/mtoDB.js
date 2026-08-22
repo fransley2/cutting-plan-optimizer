@@ -26,7 +26,7 @@ export const MTO_ITEM_STATUS = Object.freeze({
   CANCELLED: 'cancelled',
 });
 
-const MTO_REVISION_COMPARE_FIELDS = Object.freeze(['qty', 'cutLength', 'material', 'description']);
+const MTO_REVISION_COMPARE_FIELDS = Object.freeze(['qty', 'cutLength', 'material', 'description', 'tag']);
 
 function createId() {
   return globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;

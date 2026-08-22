@@ -80,3 +80,25 @@ export async function linkDrawingsForMtoItemsToEquipment(items = [], equipmentId
         : update(drawing.id, { equipmentId: destinationEquipmentId })
     )));
 }
+
+export async function ensureAndLinkDrawingsForMtoItems(items = [], options = {}) {
+  const normalizedItems = Array.isArray(items) ? items : [];
+  const created = await ensureDrawingsForMtoItems(normalizedItems, options);
+  const equipmentIdsByDrawing = new Map();
+  normalizedItems.forEach((item) => {
+    const key = drawingKey(item?.drawing);
+    if (!key) return;
+    if (!equipmentIdsByDrawing.has(key)) equipmentIdsByDrawing.set(key, new Set());
+    if (text(item?.equipmentId)) equipmentIdsByDrawing.get(key).add(text(item.equipmentId));
+  });
+  const unambiguousItems = normalizedItems.filter((item) => equipmentIdsByDrawing.get(drawingKey(item?.drawing))?.size === 1);
+  const byEquipment = new Map();
+  unambiguousItems.forEach((item) => {
+    if (!byEquipment.has(item.equipmentId)) byEquipment.set(item.equipmentId, []);
+    byEquipment.get(item.equipmentId).push(item);
+  });
+  await Promise.all([...byEquipment.entries()].map(([equipmentId, equipmentItems]) => (
+    linkDrawingsForMtoItemsToEquipment(equipmentItems, equipmentId, options)
+  )));
+  return created;
+}

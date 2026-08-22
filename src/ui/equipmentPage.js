@@ -543,7 +543,10 @@ function renderProjectSelect(selectId, allLabel) {
 function renderFilters() {
   renderProjectSelect('equipment-project-filter', 'Todos os projetos');
   renderSelectValues('equipment-location-filter', 'Todas as áreas', state.equipments.map((equipment) => equipment.fieldLocation));
-  renderSelectValues('equipment-type-filter', 'Todos os tipos', state.equipments.map((equipment) => equipment.equipmentType));
+  renderSelectValues('equipment-type-filter', 'Todos os tipos', [
+    ...state.equipmentTypes.map((type) => type.name),
+    ...state.equipments.map((equipment) => equipment.equipmentType),
+  ]);
 }
 
 function renderEquipmentSummary(equipments) {
@@ -591,11 +594,12 @@ export function renderEquipmentTable(equipments = [], options = {}) {
       groupRow.className = 'equipment-portfolio-group-row';
       const groupCell = document.createElement('td');
       groupCell.colSpan = 9;
-      const label = [getProjectName(equipment.projectId), equipment.fieldLocation || 'Área não informada', equipment.equipmentType || 'Tipo não informado']
+      const contextLabel = [getProjectName(equipment.projectId), equipment.fieldLocation || 'Área não informada']
         .filter(Boolean).join(' · ');
       const quantity = groupRecords.reduce((sum, record) => sum + equipmentPlannedQuantity(record), 0);
       groupCell.append(
-        createText('strong', null, label),
+        createText('strong', null, contextLabel),
+        createBadge(equipment.equipmentType || 'Tipo não informado', 'equipment-type-badge'),
         createText('span', null, `${groupRecords.length} grupo${groupRecords.length === 1 ? '' : 's'} · ${quantity} unidade${quantity === 1 ? '' : 's'}`),
       );
       groupRow.appendChild(groupCell);
@@ -692,8 +696,6 @@ function buildEquipmentForm(equipment = {}) {
   const drawingField = createField('Design Drawing / Engineering Reference', 'designDrawingNo', equipmentDesignReference(equipment), 'text', {
     placeholder: 'Ex.: SR-101-30-U101-290158',
   });
-  projectField.classList.add('equipment-field-full');
-  drawingField.classList.add('equipment-field-full');
 
   const identitySection = createFormSection(
     'Informações principais',
@@ -746,7 +748,9 @@ function buildEquipmentForm(equipment = {}) {
     const count = equipmentTags({ equipmentTags: tagsInput?.value }).length;
     const planned = Number(quantityInput?.value) || 0;
     tagsCounter.textContent = `${count} TAG${count === 1 ? '' : 's'} cadastrada${count === 1 ? '' : 's'} de ${planned} unidade${planned === 1 ? '' : 's'} planejada${planned === 1 ? '' : 's'}`;
-    tagsCounter.classList.toggle('equipment-count-pending', count > planned);
+    tagsCounter.classList.toggle('equipment-count-over', planned > 0 && count > planned);
+    tagsCounter.classList.toggle('equipment-count-pending', planned > 0 && count < planned);
+    tagsCounter.classList.toggle('equipment-count-balanced', planned > 0 && count === planned);
   };
   quantityInput?.addEventListener('input', () => {
     quantityEdited = true;

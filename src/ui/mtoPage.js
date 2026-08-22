@@ -1,5 +1,5 @@
 import { validateMtoItem } from '../data/mtoImport.js';
-import { ensureDrawingsForMtoItems, linkDrawingsForMtoItemsToEquipment } from '../data/mtoDrawings.js';
+import { ensureAndLinkDrawingsForMtoItems, linkDrawingsForMtoItemsToEquipment } from '../data/mtoDrawings.js';
 import { commitMtoThenCreateDrawings, retryPendingMtoDrawingSync } from '../data/mtoImportWorkflow.js';
 import { getZeroMtoImportOutcome } from '../data/mtoImportDecisions.js';
 import {
@@ -20,6 +20,10 @@ import { openMtoImportWizard } from './mtoImportWizard.js';
 import { generateMissingMtoIdentCodes } from '../core/mtoIdentCode.js';
 import { poItemTechnicalPresentation } from '../core/poItemPresentation.js';
 import {
+  MTO_TAG_RESOLUTION,
+  resolveMtoEquipmentByTag,
+} from '../core/mtoEquipmentResolution.js';
+import {
   applyMtoPoAutoAllocations,
   buildMtoPoAutoAllocationReview,
   eligibleMtoItemsForAutoAllocation,
@@ -36,6 +40,7 @@ const EDITABLE_FIELDS = [
   'description',
   'cutLength',
   'identCode',
+  'tag',
   'material',
   'type',
   'discipline',
@@ -126,6 +131,8 @@ function getInitialState(options) {
   return {
     activeTab: 'all',
     equipmentGroup: '',
+    equipmentType: '',
+    tagSearch: '',
     editingId: '',
     expandedId: '',
     isAdding: false,
@@ -241,7 +248,7 @@ export function getMtoTabItems(items, { activeTab = 'all', includeSuperseded = f
     return scopedItems.filter((item) => item.status === MTO_ITEM_STATUS.SUPERSEDED);
   }
   if (activeTab === 'equipment' && equipmentGroup) {
-    return scopedItems.filter((item) => getMtoEquipmentKey(item) === equipmentGroup);
+    return scopedItems.filter((item) => equipmentGroupKey(item) === equipmentGroup);
   }
   return scopedItems;
 }
@@ -263,6 +270,7 @@ function itemSearchText(item) {
     item.pos,
     item.description,
     item.identCode,
+    item.tag,
     item.material,
     item.type,
     item.discipline,
@@ -291,7 +299,9 @@ export function filterMtoItems(items, filters) {
 }
 
 function getVisibleMtoItems(items, state, coverageByMto = new Map()) {
-  return filterMtoItems(applyTab(items, state, coverageByMto), state.filters);
+  const visible = filterMtoItems(applyTab(items, state, coverageByMto), state.filters);
+  const tagQuery = state.activeTab === 'equipment' ? state.tagSearch.trim().toLocaleLowerCase() : '';
+  return tagQuery ? visible.filter((item) => String(item.tag || '').toLocaleLowerCase().includes(tagQuery)) : visible;
 }
 
 function selectedItems(items, state) {
@@ -340,39 +350,91 @@ function renderTabs(items, state, rerender, coverageByMto = new Map()) {
   return tabs;
 }
 
-function renderEquipmentGroups(items, state, rerender) {
+function equipmentTypeLabel(equipment = {}) {
+  return equipment.equipmentType || equipment.type || 'Tipo não informado';
+}
+
+function equipmentGroupKey(item = {}) {
+  if (item.equipmentId) return `equipment:${item.equipmentId}`;
+  if (item.tag) return `unmatched:${String(item.tag).trim().toLocaleUpperCase()}`;
+  return 'unmatched:no-tag';
+}
+
+export function buildMtoEquipmentGroups(items = [], equipments = []) {
+  const equipmentById = new Map(equipments.map((equipment) => [equipment.id, equipment]));
+  const groups = new Map();
+  items.forEach((item) => {
+    const key = equipmentGroupKey(item);
+    const equipment = equipmentById.get(item.equipmentId) || null;
+    if (!groups.has(key)) groups.set(key, {
+      key,
+      equipment,
+      equipmentType: equipmentTypeLabel(equipment || {}),
+      items: [],
+      tags: new Set(),
+      unmatchedCount: 0,
+    });
+    const group = groups.get(key);
+    group.items.push(item);
+    if (item.tag) group.tags.add(String(item.tag).trim().toLocaleUpperCase());
+    if (item._tagResolution?.status === MTO_TAG_RESOLUTION.UNMATCHED
+      || item._tagResolution?.status === MTO_TAG_RESOLUTION.AMBIGUOUS) group.unmatchedCount += 1;
+  });
+  return [...groups.values()].map((group) => ({ ...group, tagCount: group.tags.size }))
+    .sort((left, right) => equipmentLabel(left.equipment).localeCompare(equipmentLabel(right.equipment)));
+}
+
+function renderEquipmentGroups(items, equipments, state, rerender) {
   if (state.activeTab !== 'equipment') return document.createDocumentFragment();
 
-  const groups = uniqueValues(items.map((item) => ({ group: getMtoEquipmentKey(item) })), 'group');
-  if (groups.length && !groups.includes(state.equipmentGroup)) state.equipmentGroup = groups[0];
+  const allGroups = buildMtoEquipmentGroups(items, equipments);
+  const types = [...new Set(allGroups.map((group) => group.equipmentType))].sort((a, b) => a.localeCompare(b));
+  if (state.equipmentType && !types.includes(state.equipmentType)) state.equipmentType = '';
+  const query = state.tagSearch.trim().toLocaleLowerCase();
+  const groups = allGroups.filter((group) => (!state.equipmentType || group.equipmentType === state.equipmentType)
+    && (!query || group.items.some((item) => String(item.tag || '').toLocaleLowerCase().includes(query))));
+  if (groups.length && !groups.some((group) => group.key === state.equipmentGroup)) state.equipmentGroup = groups[0].key;
   if (!groups.length) state.equipmentGroup = '';
 
-  const wrapper = createEl('div', 'mto-page-equipment-groups');
-  if (groups.length > 12) {
-    const select = createEl('select');
-    groups.forEach((group) => {
-      const option = createEl('option', null, group);
-      option.value = group;
-      option.selected = state.equipmentGroup === group;
-      select.append(option);
-    });
-    select.addEventListener('change', () => {
-      state.equipmentGroup = select.value;
-      rerender();
-    });
-    wrapper.append(select);
-    return wrapper;
-  }
-
-  groups.forEach((group) => {
-    const button = createEl('button', `mto-tabs-item${state.equipmentGroup === group ? ' active' : ''}`, group);
-    button.type = 'button';
-    button.addEventListener('click', () => {
-      state.equipmentGroup = group;
-      rerender();
-    });
-    wrapper.append(button);
+  const wrapper = createEl('section', 'mto-equipment-browser');
+  const controls = createEl('div', 'mto-equipment-browser-controls');
+  const typeField = renderSelect('Tipo de equipamento', state.equipmentType, types, (value) => {
+    state.equipmentType = value;
+    state.equipmentGroup = '';
+    rerender();
   });
+  const tagField = createEl('label', 'field');
+  tagField.append(createEl('span', null, 'Buscar TAG'));
+  const tagSearch = createEl('input');
+  tagSearch.type = 'search';
+  tagSearch.placeholder = 'Ex.: 32-WJ-10-3020';
+  tagSearch.value = state.tagSearch;
+  tagSearch.dataset.focusKey = 'mto-equipment-tag-search';
+  tagSearch.addEventListener('input', () => { state.tagSearch = tagSearch.value; rerender(); });
+  tagField.append(tagSearch);
+  controls.append(typeField, tagField);
+
+  const list = createEl('div', 'mto-page-equipment-groups');
+  groups.forEach((group) => {
+    const equipment = group.equipment;
+    const label = equipment
+      ? [equipment.fieldLocation, equipmentTypeLabel(equipment), equipment.variant].filter(Boolean).join(' · ')
+      : (group.key === 'unmatched:no-tag' ? 'Linhas sem TAG' : `TAG sem equipamento · ${group.items[0]?.tag || '—'}`);
+    const button = createEl('button', `mto-equipment-group-card${state.equipmentGroup === group.key ? ' active' : ''}`);
+    button.type = 'button';
+    button.append(
+      createEl('strong', null, label),
+      createEl('span', null, `${group.tagCount} TAG(s) · ${group.items.length} peça(s)`),
+      createEl('small', group.unmatchedCount ? 'text-warning' : 'text-muted', `${group.unmatchedCount} sem equipamento correspondente`),
+    );
+    button.addEventListener('click', () => {
+      state.equipmentGroup = group.key;
+      rerender();
+    });
+    list.append(button);
+  });
+  if (!groups.length) list.append(createEl('p', 'text-muted', 'Nenhum equipamento ou TAG corresponde aos filtros.'));
+  wrapper.append(controls, list);
   return wrapper;
 }
 
@@ -1418,6 +1480,10 @@ function renderSelectionToolbar(allItems, state, rerender) {
     openMtoPoAllocationModal(selected, state, rerender);
   });
 
+  const linkEquipment = createEl('button', 'btn btn-secondary', 'Vincular equipamento');
+  linkEquipment.type = 'button';
+  linkEquipment.addEventListener('click', () => openBulkLinkEquipmentModal(state, rerender));
+
   const clear = createEl('button', 'btn btn-ghost mto-clear-selection');
   clear.type = 'button';
   clear.disabled = !canDelete;
@@ -1430,7 +1496,7 @@ function renderSelectionToolbar(allItems, state, rerender) {
     rerender();
   });
 
-  toolbar.append(count, edit, linkPurchase, send, createWorkpack, remove, clear);
+  toolbar.append(count, edit, linkEquipment, linkPurchase, send, createWorkpack, remove, clear);
   fragment.append(toolbar);
   return fragment;
 }
@@ -1497,11 +1563,16 @@ function mtoPositionValue(item = {}) {
 function mtoBulkSearchText(item = {}) {
   return [
     item.mark,
+    item.tag,
     item.description,
     item.material,
     item.equipmentName,
     item.constructionActivity,
   ].join(' ').toLowerCase();
+}
+
+export function extractMtoDimension(description = '') {
+  return String(description).match(/\bD?\s*\d+(?:[.,]\d+)?\s*[x×]\s*\d+(?:[.,]\d+)?(?:\s*mm)?\b/i)?.[0]?.trim() || '';
 }
 
 function groupMtoItemsByDrawing(items = []) {
@@ -1529,7 +1600,7 @@ function groupMtoItemsByConstructionActivity(items = []) {
 }
 
 function equipmentLabel(equipment = {}) {
-  return equipment.name || equipment.clientTag || equipment.code || equipment.id || '';
+  return equipment?.name || equipment?.equipmentName || equipment?.clientTag || equipment?.code || equipment?.id || '';
 }
 
 export function equipmentHint(item = {}) {
@@ -1538,9 +1609,18 @@ export function equipmentHint(item = {}) {
 
 export function enrichItemsWithEquipment(items = [], equipments = []) {
   return items.map((item) => {
-    if (item.equipmentId) return item;
-    const match = findEquipmentMatch(equipments, equipmentHint(item));
-    return match.equipment ? { ...item, equipmentId: match.equipment.id } : item;
+    const tagResolution = resolveMtoEquipmentByTag(item, equipments);
+    if (item.equipmentId) return { ...item, _tagResolution: tagResolution };
+    if (tagResolution.equipment) {
+      return { ...item, equipmentId: tagResolution.equipment.id, _tagResolution: tagResolution };
+    }
+    if (tagResolution.status !== MTO_TAG_RESOLUTION.MISSING_TAG) {
+      return { ...item, _tagResolution: tagResolution };
+    }
+    const legacyMatch = findEquipmentMatch(equipments, equipmentHint(item));
+    return legacyMatch.equipment
+      ? { ...item, equipmentId: legacyMatch.equipment.id, _tagResolution: tagResolution }
+      : { ...item, _tagResolution: tagResolution };
   });
 }
 
@@ -1788,13 +1868,19 @@ function appendBulkLinkItem(list, item, body) {
   checkbox.value = item.id;
   checkbox.addEventListener('change', () => updateBulkSelectionState(body));
 
-  const summary = createEl('span');
+  const summary = createEl('span', 'mto-bulk-link-item-summary');
   const mark = item.mark || '(sem mark)';
   const position = mtoPositionValue(item);
   const description = item.description || 'Sem descricao';
-  summary.textContent = `${mark} / Pos ${position} \u2014 ${description}`;
+  const identity = createEl('span', 'mto-bulk-link-item-identity');
+  identity.append(createEl('strong', null, `${mark} / Pos ${position}`));
+  if (item.tag) identity.append(createEl('span', 'mto-tag-badge neutral', item.tag));
+  summary.append(identity, createEl('span', 'mto-bulk-link-item-description', description));
+  const dimension = extractMtoDimension(description);
+  const dimensionBadge = createEl('span', 'mto-bulk-link-dimension', dimension || '—');
+  dimensionBadge.title = dimension ? 'Medida extraída da descrição' : 'Medida não identificada';
 
-  label.append(checkbox, summary);
+  label.append(checkbox, summary, dimensionBadge);
   list.append(label);
 }
 
@@ -1832,12 +1918,50 @@ function buildBulkLinkGroup(drawingNo, items, body) {
   return group;
 }
 
-function appendEquipmentOption(select, equipment) {
-  const label = equipmentLabel(equipment);
-  if (!equipment?.id || !label) return;
-  const option = createEl('option', null, label);
-  option.value = equipment.id;
-  select.append(option);
+function equipmentDestinationDescription(equipment = {}) {
+  const tagCount = Array.isArray(equipment.equipmentTags) ? equipment.equipmentTags.length : 0;
+  return [equipmentTypeLabel(equipment), equipment.fieldLocation, equipment.variant,
+    equipment.designDrawingNo ? `Desenho ${equipment.designDrawingNo}` : 'Sem desenho de referência',
+    `${tagCount} TAG(s)`].filter(Boolean).join(' · ');
+}
+
+function buildEquipmentDestinationPicker(equipments = [], initialValue = '') {
+  const wrapper = createEl('section', 'mto-equipment-picker');
+  wrapper.append(createEl('strong', null, 'Equipamento destino'));
+  const search = createEl('input');
+  search.className = 'input';
+  search.type = 'search';
+  search.placeholder = 'Buscar por tipo, área, variante, desenho ou TAG...';
+  const list = createEl('div', 'mto-equipment-picker-list');
+  equipments.forEach((equipment) => {
+    if (!equipment?.id) return;
+    const option = createEl('label', 'mto-equipment-picker-option');
+    option.dataset.searchText = [equipmentLabel(equipment), equipmentDestinationDescription(equipment), ...(equipment.equipmentTags || [])]
+      .join(' ').toLocaleLowerCase();
+    const radio = createEl('input');
+    radio.type = 'radio';
+    radio.name = 'mtoEquipmentDestination';
+    radio.value = equipment.id;
+    radio.checked = equipment.id === initialValue;
+    const copy = createEl('span');
+    copy.append(createEl('strong', null, equipmentLabel(equipment)), createEl('small', 'text-muted', equipmentDestinationDescription(equipment)));
+    option.append(radio, copy);
+    list.append(option);
+  });
+  search.addEventListener('input', () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    list.querySelectorAll('.mto-equipment-picker-option').forEach((option) => {
+      option.classList.toggle('hidden', Boolean(query) && !option.dataset.searchText.includes(query));
+    });
+  });
+  wrapper.append(search, list);
+  return { element: wrapper, getValue: () => list.querySelector('input:checked')?.value || '' };
+}
+
+export function commonResolvedEquipmentId(items = [], equipments = []) {
+  if (!items.length) return '';
+  const resolvedIds = items.map((item) => resolveMtoEquipmentByTag(item, equipments).equipment?.id || '');
+  return resolvedIds.every(Boolean) && new Set(resolvedIds).size === 1 ? resolvedIds[0] : '';
 }
 
 async function openBulkLinkMtoItemsModal(state, rerender) {
@@ -1956,15 +2080,17 @@ async function openBulkLinkEquipmentModal(state, rerender) {
       getMtoItems(state.options.projectId ? { projectId: state.options.projectId } : {}),
       getEquipmentCandidates(state.options.projectId || ''),
     ]);
-    const unlinkedItems = items.filter((item) => !item.equipmentId);
+    const selectedScope = items.filter((item) => state.selectedIds.has(item.id));
+    const modalItems = selectedScope.length ? selectedScope : items.filter((item) => !item.equipmentId);
+    const preselectedEquipmentId = commonResolvedEquipmentId(modalItems, equipments);
 
     const body = createEl('div', 'mto-bulk-link-modal');
-    body.append(createEl('p', 'text-muted', 'Selecione os itens sem equipamento e o equipamento destino.'));
+    body.append(createEl('p', 'text-muted', 'Selecione as linhas MTO e confirme o equipamento destino. Linhas com a mesma TAG resolvida já sugerem o destino.'));
 
     const search = createEl('input');
     search.className = 'input mto-bulk-link-search';
     search.type = 'search';
-    search.placeholder = 'Buscar por mark, descricao, material ou atividade...';
+    search.placeholder = 'Buscar por TAG, mark, descrição, material ou atividade...';
 
     const controls = createEl('div', 'mto-bulk-link-controls');
     const selectAll = createEl('input');
@@ -1976,19 +2102,11 @@ async function openBulkLinkEquipmentModal(state, rerender) {
     const counter = createEl('span', 'mto-bulk-link-counter', '0 de 0 selecionados');
     controls.append(selectAll, selectAllLabel, counter);
 
-    const equipmentField = createEl('label', 'field');
-    equipmentField.append(createEl('span', null, 'Equipamento destino'));
-    const equipmentSelect = createEl('select');
-    equipmentSelect.className = 'input';
-    const emptyOption = createEl('option', null, 'Selecione...');
-    emptyOption.value = '';
-    equipmentSelect.append(emptyOption);
-    equipments.forEach((equipment) => appendEquipmentOption(equipmentSelect, equipment));
-    equipmentField.append(equipmentSelect);
+    const equipmentPicker = buildEquipmentDestinationPicker(equipments, preselectedEquipmentId);
 
     const list = createEl('div', 'mto-bulk-link-list mto-bulk-link-groups');
-    if (unlinkedItems.length) {
-      groupMtoItemsByConstructionActivity(unlinkedItems).forEach(([activity, groupItems]) => {
+    if (modalItems.length) {
+      groupMtoItemsByConstructionActivity(modalItems).forEach(([activity, groupItems]) => {
         list.append(buildBulkLinkGroup(activity, groupItems, body));
       });
     } else {
@@ -2003,7 +2121,7 @@ async function openBulkLinkEquipmentModal(state, rerender) {
       updateBulkSelectionState(body);
     });
 
-    body.append(search, controls, list, equipmentField);
+    body.append(search, controls, list, equipmentPicker.element);
     updateBulkSelectionState(body);
 
     openModal({
@@ -2018,7 +2136,7 @@ async function openBulkLinkEquipmentModal(state, rerender) {
           closeOnClick: false,
           onClick: async () => {
             try {
-              const linkedItems = enrichItemsWithEquipment(unlinkedItems, equipments)
+              const linkedItems = enrichItemsWithEquipment(modalItems, equipments)
                 .filter((item) => item.equipmentId);
               await Promise.all(linkedItems.map((item) => updateMtoItem(item.id, { equipmentId: item.equipmentId })));
               const itemsByEquipment = linkedItems.reduce((groups, item) => {
@@ -2030,7 +2148,7 @@ async function openBulkLinkEquipmentModal(state, rerender) {
                 linkDrawingsForMtoItemsToEquipment(items, equipmentId, { projectId: state.options.projectId })
               )));
               closeModal();
-              showToast(`${linkedItems.length} de ${unlinkedItems.length} itens vinculados automaticamente.`, 'success');
+              showToast(`${linkedItems.length} de ${modalItems.length} itens vinculados automaticamente.`, 'success');
               await rerender(true);
             } catch (error) {
               console.error(error);
@@ -2043,7 +2161,7 @@ async function openBulkLinkEquipmentModal(state, rerender) {
           variant: 'btn-primary',
           closeOnClick: false,
           onClick: async () => {
-            const equipmentId = equipmentSelect.value;
+            const equipmentId = equipmentPicker.getValue();
             if (!equipmentId) {
               showToast('Selecione um equipamento destino', 'error');
               return;
@@ -2060,7 +2178,7 @@ async function openBulkLinkEquipmentModal(state, rerender) {
             try {
               await Promise.all(selectedIds.map((id) => updateMtoItem(id, { equipmentId })));
               const selectedIdSet = new Set(selectedIds);
-              const selectedItems = unlinkedItems.filter((item) => selectedIdSet.has(item.id));
+              const selectedItems = modalItems.filter((item) => selectedIdSet.has(item.id));
               await linkDrawingsForMtoItemsToEquipment(selectedItems, equipmentId, {
                 projectId: state.options.projectId,
               });
@@ -2126,6 +2244,7 @@ const EDITABLE_FIELD_LABELS = Object.freeze({
   description: 'Descrição',
   cutLength: 'Length / mm',
   identCode: 'IDENT CODE',
+  tag: 'TAG',
   material: 'Material',
   type: 'Tipo',
   discipline: 'Disciplina',
@@ -2134,7 +2253,7 @@ const EDITABLE_FIELD_LABELS = Object.freeze({
 function renderEditorRow(item, state, rerender, { isNew = false } = {}) {
   const row = createEl('tr', 'mto-table-row-editing');
   const cell = createEl('td');
-  cell.colSpan = 6;
+  cell.colSpan = 8;
   const editor = createEl('section', 'mto-row-editor');
   editor.append(createEl('h3', null, isNew ? 'Adicionar linha MTO' : 'Editar linha MTO'));
   const fields = createEl('div', 'mto-row-editor-fields');
@@ -2213,6 +2332,36 @@ function equipmentSummary(item, equipmentById = new Map()) {
     return equipmentLabel(equipmentById.get(item.equipmentId)) || item.equipmentName || item.equipmentId;
   }
   return item.constructionActivity || item.equipmentName || 'Sem equipamento vinculado';
+}
+
+function renderTagCell(item) {
+  const cell = createEl('td', 'mto-table-tag');
+  if (!item.tag) {
+    cell.append(createEl('span', 'text-muted', '—'));
+    return cell;
+  }
+  const resolution = item._tagResolution;
+  const resolved = Boolean(item.equipmentId)
+    && resolution?.status !== MTO_TAG_RESOLUTION.UNMATCHED
+    && resolution?.status !== MTO_TAG_RESOLUTION.AMBIGUOUS;
+  const badge = createEl('span', `mto-tag-badge ${resolved ? 'success' : 'warning'}`, item.tag);
+  if (!resolved) badge.title = 'Sem equipamento correspondente cadastrado';
+  cell.append(badge);
+  return cell;
+}
+
+function renderEquipmentCell(item, equipmentById = new Map()) {
+  const cell = createEl('td', 'mto-table-equipment');
+  const equipment = equipmentById.get(item.equipmentId);
+  if (!equipment) {
+    cell.append(createEl('span', 'text-muted', '—'));
+    return cell;
+  }
+  cell.append(
+    createEl('strong', null, equipmentLabel(equipment)),
+    createEl('small', 'text-muted', [equipment.fieldLocation, equipmentTypeLabel(equipment), equipment.variant].filter(Boolean).join(' · ')),
+  );
+  return cell;
 }
 
 function renderIdentificationCell(item) {
@@ -2303,7 +2452,7 @@ function renderDetailField(label, value) {
 function renderDetailRow(item, equipmentById = new Map(), coverageByMto = new Map()) {
   const row = createEl('tr', 'mto-table-detail-row');
   const cell = createEl('td');
-  cell.colSpan = 6;
+  cell.colSpan = 8;
   const details = createEl('dl', 'mto-row-details');
   details.append(
     renderDetailField('Length / mm', formatNumber(item.cutLength, 2)),
@@ -2346,7 +2495,7 @@ function renderTable(items, state, rerender, equipmentById = new Map(), coverage
   selectHead.append(selectAll);
   headRow.append(selectHead);
 
-  ['Identificação', 'Descrição', 'Qtd', 'Material', 'Status']
+  ['Identificação', 'TAG', 'Descrição', 'Equipamento', 'Qtd', 'Material', 'Status']
     .forEach((heading) => headRow.append(createEl('th', null, heading)));
   thead.append(headRow);
 
@@ -2359,7 +2508,7 @@ function renderTable(items, state, rerender, equipmentById = new Map(), coverage
       ? 'Nenhuma linha de MTO importada para o projeto ativo.'
       : 'Nenhuma linha MTO encontrada.';
     const cell = createEl('td', 'mto-table-empty', emptyMessage);
-    cell.colSpan = 6;
+    cell.colSpan = 8;
     row.append(cell);
     tbody.append(row);
   }
@@ -2386,9 +2535,11 @@ function renderTable(items, state, rerender, equipmentById = new Map(), coverage
     });
 
     row.append(renderIdentificationCell(item));
+    row.append(renderTagCell(item));
     const description = createEl('td', 'mto-table-description', item.description || '—');
     description.title = item.description || '';
     row.append(description);
+    row.append(renderEquipmentCell(item, equipmentById));
     row.append(createEl('td', 'mto-table-quantity', formatNumber(item.qty)));
     row.append(createEl('td', 'mto-table-material', item.material || '—'));
     row.append(renderStatusCell(item, state, rerender, coverageByMto));
@@ -2454,7 +2605,7 @@ async function handleImport(selection, importButton, state, rerender) {
       items: itemsToImport,
       projectId,
       saveImport: saveMtoImport,
-      createDrawings: ensureDrawingsForMtoItems,
+      createDrawings: ensureAndLinkDrawingsForMtoItems,
     });
     if (!drawingError) {
       await updateMtoBatch(importResult.batch.id, {
@@ -2517,12 +2668,13 @@ async function render(container, state) {
     ...(projectId ? { projectId } : {}),
     includeSuperseded: true,
   };
-  const [items, equipments, procurementCoverage, allBatches] = await Promise.all([
+  const [storedItems, equipments, procurementCoverage, allBatches] = await Promise.all([
     getMtoItems(itemFilters),
     listEquipments({}),
     state.options.listMtoProcurementCoverage?.(projectId ? { projectId } : {}) || [],
     activeProjectId ? getAllMtoBatches() : [],
   ]);
+  const items = enrichItemsWithEquipment(storedItems, equipments);
   const pendingDrawingBatches = allBatches
     .filter((batch) => batch.projectId === activeProjectId)
     .filter((batch) => ['pending', 'failed', 'processing'].includes(batch.metadata?.drawingSync?.status))
@@ -2541,6 +2693,14 @@ async function render(container, state) {
   });
   state.options.onSelectionChange?.(selectedItems(items, state));
   const rerender = (reload = false) => (reload ? refreshMtoPage(container, state.options) : render(container, state));
+  if (state.activeTab === 'equipment') {
+    const groups = buildMtoEquipmentGroups(filterOptionItems, equipments)
+      .filter((group) => !state.equipmentType || group.equipmentType === state.equipmentType)
+      .filter((group) => !state.tagSearch.trim() || group.items.some((item) => String(item.tag || '')
+        .toLocaleLowerCase().includes(state.tagSearch.trim().toLocaleLowerCase())));
+    if (groups.length && !groups.some((group) => group.key === state.equipmentGroup)) state.equipmentGroup = groups[0].key;
+    if (!groups.length) state.equipmentGroup = '';
+  }
   const visibleItems = getVisibleMtoItems(items, state, coverageByMto);
 
   const page = createEl('section', 'mto-page');
@@ -2626,7 +2786,7 @@ async function render(container, state) {
   const workspace = createEl('section', 'mto-page-workspace');
   workspace.append(
     renderTabs(items, state, rerender, coverageByMto),
-    renderEquipmentGroups(filterOptionItems, state, rerender),
+    renderEquipmentGroups(filterOptionItems, equipments, state, rerender),
     renderFilters(filterOptionItems, state, rerender, equipmentById),
     renderSelectionToolbar(items, state, rerender),
     renderHiddenItemsWarning(unlinkedItems.length, state, rerender),
